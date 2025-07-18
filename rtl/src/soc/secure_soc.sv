@@ -1076,46 +1076,129 @@ module secure_soc (
    logic [XbarCfg.AxiDataWidth-1:0] ddr3_wdata_encrypted;
    logic [XbarCfg.AxiDataWidth-1:0] ddr3_rdata_decrypted;
 
-   /*
    localparam DDR3_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
 
-   //wire [XbarCfg.AxiAddrWidth-1:0] ddr3_w_addr_holder = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr;
-   reg [XbarCfg.AxiAddrWidth-1:0] ddr3_w_addr_holder;
+   // Write Path Address Management for CTR
+   logic                               w_addr_fifo_push;
+   logic                               w_addr_fifo_pop;
+   logic [XbarCfg.AxiAddrWidth-1:0]    w_addr_fifo_data_i;
+   logic [XbarCfg.AxiAddrWidth-1:0]    w_addr_fifo_data_o;
+   logic                               w_addr_fifo_empty;
+   logic                               w_addr_fifo_full;
+   logic [XbarCfg.AxiAddrWidth-1:0]    write_addr_for_enc;
+   logic                               write_burst_active;
+
+   assign w_addr_fifo_push = xbar_mst_ports_req[MASTER_DRAM_IDX].aw_valid && dram_axi_awready;
+   assign w_addr_fifo_data_i = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr;
+   // Pop address from FIFO only on the first beat of a transaction.
+   assign w_addr_fifo_pop = xbar_mst_ports_req[MASTER_DRAM_IDX].w_valid && dram_axi_wready && !write_burst_active;
+
+   // Track if a write burst is in progress
    always_ff @(posedge clkwiz_o or negedge rst_n) begin
-      if (~rst_n) begin
-         ddr3_w_addr_holder <= '0;
-      end
-      else if (xbar_mst_ports_req[MASTER_DRAM_IDX].aw_valid && dram_axi_awready) begin
-         ddr3_w_addr_holder <= xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr;
-      end
+       if (~rst_n) begin
+           write_burst_active <= 1'b0;
+       end else if (xbar_mst_ports_req[MASTER_DRAM_IDX].w_valid && dram_axi_wready) begin
+           write_burst_active <= !xbar_mst_ports_req[MASTER_DRAM_IDX].w.last;
+       end
    end
+
+   // Increment address for each beat of the burst
+   always_ff @(posedge clkwiz_o or negedge rst_n) begin
+       if (~rst_n) begin
+           write_addr_for_enc <= '0;
+       end else if (w_addr_fifo_pop) begin // Load base address for the first beat
+           write_addr_for_enc <= w_addr_fifo_data_o;
+       // For subsequent beats, increment the address
+       end else if (xbar_mst_ports_req[MASTER_DRAM_IDX].w_valid && dram_axi_wready && write_burst_active) begin
+           write_addr_for_enc <= write_addr_for_enc + (XbarCfg.AxiDataWidth / 8);
+       end
+   end
+
+   fifo_v3 #(
+       .DATA_WIDTH(XbarCfg.AxiAddrWidth),
+       .DEPTH(16)
+   ) w_addr_fifo (
+       .clk_i(clkwiz_o),
+       .rst_ni(rst_n),
+       .flush_i(1'b0),
+       .testmode_i(1'b0),
+       .full_o(w_addr_fifo_full),
+       .empty_o(w_addr_fifo_empty),
+       .usage_o(),
+       .data_i(w_addr_fifo_data_i),
+       .push_i(w_addr_fifo_push),
+       .data_o(w_addr_fifo_data_o),
+       .pop_i(w_addr_fifo_pop)
+   );
 
    ctr_encoder_decoder #(.KEY(DDR3_CTR_KEY)) ddr3_ctr_enc (
-      .row_number(ddr3_w_addr_holder),
-      .data_in(xbar_mst_ports_req[MASTER_DRAM_IDX].w.data),
-      .data_out(ddr3_wdata_encrypted)
+       .row_number(write_addr_for_enc),
+       .data_in(xbar_mst_ports_req[MASTER_DRAM_IDX].w.data),
+       .data_out(ddr3_wdata_encrypted)
    );
 
-   reg [XbarCfg.AxiAddrWidth-1:0] ddr3_r_addr_holder;
+   // Read Path Address Management for CTR
+   logic                               r_addr_fifo_push;
+   logic                               r_addr_fifo_pop;
+   logic [XbarCfg.AxiAddrWidth-1:0]    r_addr_fifo_data_i;
+   logic [XbarCfg.AxiAddrWidth-1:0]    r_addr_fifo_data_o;
+   logic                               r_addr_fifo_empty;
+   logic                               r_addr_fifo_full;
+   logic [XbarCfg.AxiAddrWidth-1:0]    read_addr_for_dec;
+   logic                               read_burst_active;
+
+   assign r_addr_fifo_push = xbar_mst_ports_req[MASTER_DRAM_IDX].ar_valid && dram_axi_arready;
+   assign r_addr_fifo_data_i = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.addr;
+   // Pop address from FIFO only on the first beat of a transaction.
+   assign r_addr_fifo_pop = dram_axi_rvalid && dram_axi_rready && !read_burst_active;
+
+   // Track if a read burst is in progress
    always_ff @(posedge clkwiz_o or negedge rst_n) begin
-      if (~rst_n) begin
-         ddr3_r_addr_holder <= '0;
-      end
-      else if (xbar_mst_ports_req[MASTER_DRAM_IDX].ar_valid && dram_axi_arready) begin
-         ddr3_r_addr_holder <= xbar_mst_ports_req[MASTER_DRAM_IDX].ar.addr;
-      end
+       if (~rst_n) begin
+           read_burst_active <= 1'b0;
+       end else if (dram_axi_rvalid && dram_axi_rready) begin
+           read_burst_active <= !dram_axi_rlast;
+       end
    end
 
-   ctr_encoder_decoder #(.KEY(DDR3_CTR_KEY)) ddr3_ctr_dec (
-      .row_number(ddr3_r_addr_holder),
-      .data_in(dram_axi_rdata),
-      .data_out(ddr3_rdata_decrypted)
-   );
-   */
-   
-   assign ddr3_wdata_encrypted = xbar_mst_ports_req[MASTER_DRAM_IDX].w.data;
-   assign ddr3_rdata_decrypted = dram_axi_rdata;
+   // Increment address for each beat of the burst
+   always_ff @(posedge clkwiz_o or negedge rst_n) begin
+       if (~rst_n) begin
+           read_addr_for_dec <= '0;
+       end else if (r_addr_fifo_pop) begin // Load base address for the first beat
+           read_addr_for_dec <= r_addr_fifo_data_o;
+       // For subsequent beats, increment the address
+       end else if (dram_axi_rvalid && dram_axi_rready && read_burst_active) begin
+           read_addr_for_dec <= read_addr_for_dec + (XbarCfg.AxiDataWidth / 8);
+       end
+   end
 
+   fifo_v3 #(
+       .DATA_WIDTH(XbarCfg.AxiAddrWidth),
+       .DEPTH(16)
+   ) r_addr_fifo (
+       .clk_i(clkwiz_o),
+       .rst_ni(rst_n),
+       .flush_i(1'b0),
+       .testmode_i(1'b0),
+       .full_o(r_addr_fifo_full),
+       .empty_o(r_addr_fifo_empty),
+       .usage_o(),
+       .data_i(r_addr_fifo_data_i),
+       .push_i(r_addr_fifo_push),
+       .data_o(r_addr_fifo_data_o),
+       .pop_i(r_addr_fifo_pop)
+   );
+
+   ctr_encoder_decoder #(.KEY(DDR3_CTR_KEY)) ddr3_ctr_dec (
+       .row_number(read_addr_for_dec),
+       .data_in(dram_axi_rdata),
+       .data_out(ddr3_rdata_decrypted)
+   );
+   
+   //assign ddr3_wdata_encrypted = xbar_mst_ports_req[MASTER_DRAM_IDX].w.data;
+   //assign ddr3_rdata_decrypted = dram_axi_rdata;
+   
    assign dram_axi_awvalid = xbar_mst_ports_req[MASTER_DRAM_IDX].aw_valid;
    assign dram_axi_awaddr  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr;
    assign dram_axi_awid    = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.id;
@@ -1171,69 +1254,69 @@ module secure_soc (
    logic [XbarCfg.AxiDataWidth/32-1:0]  dfi_rddata_dnv_from_phy_w;
 
    ddr3_axi #(
-      .DDR_MHZ          ( `DDR_MHZ ),
-      .DDR_WRITE_LATENCY( `DDR_WRITE_LATENCY ),
-      .DDR_READ_LATENCY ( `DDR_READ_LATENCY )
+       .DDR_MHZ          ( `DDR_MHZ ),
+       .DDR_WRITE_LATENCY( `DDR_WRITE_LATENCY ),
+       .DDR_READ_LATENCY ( `DDR_READ_LATENCY )
    ) i_ddr3_axi (
-      .clk_i   ( clkwiz_o ),
-      .rst_i   ( ~rst_n   ),
+       .clk_i   ( clkwiz_o ),
+       .rst_i   ( ~rst_n   ),
 
-      .inport_awvalid_i ( dram_axi_awvalid ),
-      .inport_awaddr_i  ( dram_axi_awaddr ),
-      .inport_awid_i    ( dram_axi_awid    ),
-      .inport_awlen_i   ( dram_axi_awlen        ),
-      .inport_awburst_i ( dram_axi_awburst      ),
-      .inport_awready_o ( dram_axi_awready      ),
+       .inport_awvalid_i ( dram_axi_awvalid ),
+       .inport_awaddr_i  ( dram_axi_awaddr ),
+       .inport_awid_i    ( dram_axi_awid    ),
+       .inport_awlen_i   ( dram_axi_awlen        ),
+       .inport_awburst_i ( dram_axi_awburst      ),
+       .inport_awready_o ( dram_axi_awready      ),
 
-      .inport_wvalid_i  ( dram_axi_wvalid  ),
-      .inport_wdata_i   ( dram_axi_wdata   ),
-      .inport_wstrb_i   ( dram_axi_wstrb   ),
-      .inport_wlast_i   ( dram_axi_wlast   ),
-      .inport_wready_o  ( dram_axi_wready  ),
+       .inport_wvalid_i  ( dram_axi_wvalid  ),
+       .inport_wdata_i   ( dram_axi_wdata   ),
+       .inport_wstrb_i   ( dram_axi_wstrb   ),
+       .inport_wlast_i   ( dram_axi_wlast   ),
+       .inport_wready_o  ( dram_axi_wready  ),
 
-      .inport_bready_i  ( dram_axi_bready  ),
-      .inport_bvalid_o  ( dram_axi_bvalid  ),
-      .inport_bresp_o   ( dram_axi_bresp   ),
-      .inport_bid_o     ( dram_axi_bid     ),
+       .inport_bready_i  ( dram_axi_bready  ),
+       .inport_bvalid_o  ( dram_axi_bvalid  ),
+       .inport_bresp_o   ( dram_axi_bresp   ),
+       .inport_bid_o     ( dram_axi_bid     ),
 
-      .inport_arvalid_i ( dram_axi_arvalid ),
-      .inport_araddr_i  ( dram_axi_araddr ),
-      .inport_arid_i    ( dram_axi_arid    ),
-      .inport_arlen_i   ( dram_axi_arlen        ),
-      .inport_arburst_i ( dram_axi_arburst      ),
-      .inport_arready_o ( dram_axi_arready      ),
+       .inport_arvalid_i ( dram_axi_arvalid ),
+       .inport_araddr_i  ( dram_axi_araddr ),
+       .inport_arid_i    ( dram_axi_arid    ),
+       .inport_arlen_i   ( dram_axi_arlen        ),
+       .inport_arburst_i ( dram_axi_arburst      ),
+       .inport_arready_o ( dram_axi_arready      ),
 
-      .inport_rready_i  ( dram_axi_rready  ),
-      .inport_rvalid_o  ( dram_axi_rvalid  ),
-      .inport_rdata_o   ( dram_axi_rdata   ),
-      .inport_rresp_o   ( dram_axi_rresp   ),
-      .inport_rid_o     ( dram_axi_rid     ),
-      .inport_rlast_o   ( dram_axi_rlast   ),
+       .inport_rready_i  ( dram_axi_rready  ),
+       .inport_rvalid_o  ( dram_axi_rvalid  ),
+       .inport_rdata_o   ( dram_axi_rdata   ),
+       .inport_rresp_o   ( dram_axi_rresp   ),
+       .inport_rid_o     ( dram_axi_rid     ),
+       .inport_rlast_o   ( dram_axi_rlast   ),
 
-      .dfi_rddata_i       ( dfi_rddata_from_phy_w       ),
-      .dfi_rddata_valid_i ( dfi_rddata_valid_from_phy_w ),
-      .dfi_rddata_dnv_i   ( dfi_rddata_dnv_from_phy_w   ),
+       .dfi_rddata_i       ( dfi_rddata_from_phy_w       ),
+       .dfi_rddata_valid_i ( dfi_rddata_valid_from_phy_w ),
+       .dfi_rddata_dnv_i   ( dfi_rddata_dnv_from_phy_w   ),
 
-      .dfi_address_o     ( dfi_address_to_phy_w         ),
-      .dfi_bank_o        ( dfi_bank_to_phy_w            ),
-      .dfi_cas_n_o       ( dfi_cas_n_to_phy_w           ),
-      .dfi_cke_o         ( dfi_cke_to_phy_w             ),
-      .dfi_cs_n_o        ( dfi_cs_n_to_phy_w            ),
-      .dfi_odt_o         ( dfi_odt_to_phy_w             ),
-      .dfi_ras_n_o       ( dfi_ras_n_to_phy_w           ),
-      .dfi_reset_n_o     ( dfi_reset_n_to_phy_w         ),
-      .dfi_we_n_o        ( dfi_we_n_to_phy_w            ),
-      .dfi_wrdata_o      ( dfi_wrdata_to_phy_w          ),
-      .dfi_wrdata_en_o   ( dfi_wrdata_en_to_phy_w       ),
-      .dfi_wrdata_mask_o ( dfi_wrdata_mask_to_phy_w     ),
-      .dfi_rddata_en_o   ( dfi_rddata_en_to_phy_w       )
+       .dfi_address_o     ( dfi_address_to_phy_w         ),
+       .dfi_bank_o        ( dfi_bank_to_phy_w            ),
+       .dfi_cas_n_o       ( dfi_cas_n_to_phy_w           ),
+       .dfi_cke_o         ( dfi_cke_to_phy_w             ),
+       .dfi_cs_n_o        ( dfi_cs_n_to_phy_w            ),
+       .dfi_odt_o         ( dfi_odt_to_phy_w             ),
+       .dfi_ras_n_o       ( dfi_ras_n_to_phy_w           ),
+       .dfi_reset_n_o     ( dfi_reset_n_to_phy_w         ),
+       .dfi_we_n_o        ( dfi_we_n_to_phy_w            ),
+       .dfi_wrdata_o      ( dfi_wrdata_to_phy_w          ),
+       .dfi_wrdata_en_o   ( dfi_wrdata_en_to_phy_w       ),
+       .dfi_wrdata_mask_o ( dfi_wrdata_mask_to_phy_w     ),
+       .dfi_rddata_en_o   ( dfi_rddata_en_to_phy_w       )
    );
 
-   ddr3_dfi_phy 
+   ddr3_dfi_phy
    #(
-     .DQS_TAP_DELAY_INIT(27)
-    ,.DQ_TAP_DELAY_INIT(0)
-    ,.TPHY_RDLAT(5)
+       .DQS_TAP_DELAY_INIT(27),
+       .DQ_TAP_DELAY_INIT(0),
+       .TPHY_RDLAT(5)
    )
    i_ddr3_dfi_phy (
        .clk_i         ( clk100      ),
