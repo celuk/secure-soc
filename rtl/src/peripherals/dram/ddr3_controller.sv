@@ -2,6 +2,8 @@
 
 module ddr3_controller
 #(
+    parameter DDR_WRITE_LATENCY = 4,
+    parameter DDR_READ_LATENCY  = 4,
     parameter DDR_MHZ          = 100
 )
 (
@@ -134,8 +136,8 @@ assign ram_ready = !core_stall;
 // TODO: write read latencies
 ddr3_core
 #(
-     .DDR_WRITE_LATENCY(4)
-    ,.DDR_READ_LATENCY(3)
+     .DDR_WRITE_LATENCY(DDR_WRITE_LATENCY)
+    ,.DDR_READ_LATENCY(DDR_READ_LATENCY)
     ,.DDR_MHZ(DDR_MHZ)
 )
 u_ddr_core

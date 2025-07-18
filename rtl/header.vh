@@ -49,9 +49,11 @@
 
 //`define DDR_100MHZ
 
-`define ZC706
-//`define DDR3_AXI
+//`define ZC706
+`define DDR3_AXI
 `define DDR_MHZ 50
+`define DDR_WRITE_LATENCY 4
+`define DDR_READ_LATENCY 3
 `define DRAM_SIM
 //`define USE_SRAM
 

@@ -119,7 +119,9 @@ module dram_controller (
  
     ddr3_controller 
     #(
-       .DDR_MHZ(`DDR_MHZ)
+        .DDR_WRITE_LATENCY(`DDR_WRITE_LATENCY)
+       ,.DDR_READ_LATENCY(`DDR_READ_LATENCY)
+       ,.DDR_MHZ(`DDR_MHZ)
     )
     ddr3_controller_inst(
        .rst_i(ddr3_reset_i),

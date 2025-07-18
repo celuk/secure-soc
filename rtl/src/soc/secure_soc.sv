@@ -730,38 +730,6 @@ module secure_soc (
    logic                            atomics_mst_rlast;
    logic [0:0]                      atomics_mst_ruser;
    
-   // On-The-Fly Encryption/Decryption for DRAM
-   logic [XbarCfg.AxiDataWidth-1:0] atomics_mst_wdata_encrypted;
-   logic [XbarCfg.AxiDataWidth-1:0] atomics_mst_rdata_decrypted;
-   
-   reg [XbarCfg.AxiAddrWidth-1:0] dram_addr_holder;
-   wire rst_n_dram = ( (rst_ni & system_reset_o & pll_locked) || uart_dram_mode );
-   always_ff @(posedge clkwiz_o or negedge rst_n_dram) begin
-      if (~rst_n_dram) begin
-         dram_addr_holder <= '0;
-      end
-      else if (atomics_mst_arvalid && atomics_mst_arready) begin
-         dram_addr_holder <= atomics_mst_araddr;
-      end
-   end
-
-   localparam DRAM_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
-
-   ctr_encoder_decoder #(.KEY(DRAM_CTR_KEY)) dram_ctr_enc (
-      .row_number(atomics_mst_awaddr),
-      .data_in(atomics_mst_wdata),
-      .data_out(atomics_mst_wdata_encrypted)
-   );
-
-   ctr_encoder_decoder #(.KEY(DRAM_CTR_KEY)) dram_ctr_dec (
-      .row_number(dram_addr_holder),
-      .data_in(atomics_mst_rdata),
-      .data_out(atomics_mst_rdata_decrypted)
-   );
-   
-   //assign atomics_mst_wdata_encrypted = atomics_mst_wdata;
-   //assign atomics_mst_rdata_decrypted = atomics_mst_rdata;
-   
    assign dram_axi_awvalid = xbar_mst_ports_req[MASTER_DRAM_IDX].aw_valid;
    assign dram_axi_awaddr  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr;
    assign dram_axi_awid    = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.id;
@@ -770,10 +738,9 @@ module secure_soc (
    assign dram_axi_awburst = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.burst;
    assign dram_axi_awprot  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.prot;
    assign dram_axi_wvalid  = xbar_mst_ports_req[MASTER_DRAM_IDX].w_valid;
-   assign dram_axi_wdata   = atomics_mst_wdata_encrypted;
+   assign dram_axi_wdata   = xbar_mst_ports_req[MASTER_DRAM_IDX].w.data;
    assign dram_axi_wstrb   = xbar_mst_ports_req[MASTER_DRAM_IDX].w.strb;
    assign dram_axi_wlast   = xbar_mst_ports_req[MASTER_DRAM_IDX].w.last;
-
    assign dram_axi_arvalid = xbar_mst_ports_req[MASTER_DRAM_IDX].ar_valid;
    assign dram_axi_araddr  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.addr;
    assign dram_axi_arid    = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.id;
@@ -781,7 +748,6 @@ module secure_soc (
    assign dram_axi_arsize  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.size;
    assign dram_axi_arburst = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.burst;
    assign dram_axi_arprot  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.prot;
-
    assign dram_axi_bready  = xbar_mst_ports_req[MASTER_DRAM_IDX].b_ready;
    assign dram_axi_rready  = xbar_mst_ports_req[MASTER_DRAM_IDX].r_ready;
 
@@ -885,7 +851,7 @@ module secure_soc (
        .mst_w_last_o    (atomics_mst_wlast),
        .mst_w_ready_i   (atomics_mst_wready),
        .mst_w_valid_o   (atomics_mst_wvalid),
-       .mst_r_data_i    (atomics_mst_rdata_decrypted),
+       .mst_r_data_i    (atomics_mst_rdata),
        .mst_r_resp_i    (atomics_mst_rresp),
        .mst_r_last_i    (atomics_mst_rlast),
        .mst_r_id_i      (atomics_mst_rid),
@@ -1076,37 +1042,6 @@ module secure_soc (
       ,.prog_mode_led_o( )
    );
    `elsif DDR3_AXI
-   // On-The-Fly Encryption/Decryption for DRAM (DDR3_AXI)
-   logic [XbarCfg.AxiDataWidth-1:0] ddr3_wdata_encrypted;
-   logic [XbarCfg.AxiDataWidth-1:0] ddr3_rdata_decrypted;
-   
-   reg [XbarCfg.AxiAddrWidth-1:0] ddr3_addr_holder;
-   always_ff @(posedge clkwiz_o or negedge rst_n) begin
-      if (~rst_n) begin
-         ddr3_addr_holder <= '0;
-      end
-      else if (xbar_mst_ports_req[MASTER_DRAM_IDX].ar_valid && dram_axi_arready) begin
-         ddr3_addr_holder <= xbar_mst_ports_req[MASTER_DRAM_IDX].ar.addr;
-      end
-   end
-
-   localparam DDR3_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
-
-   ctr_encoder_decoder #(.KEY(DDR3_CTR_KEY)) ddr3_ctr_enc (
-      .row_number(xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr),
-      .data_in(xbar_mst_ports_req[MASTER_DRAM_IDX].w.data),
-      .data_out(ddr3_wdata_encrypted)
-   );
-
-   ctr_encoder_decoder #(.KEY(DDR3_CTR_KEY)) ddr3_ctr_dec (
-      .row_number(ddr3_addr_holder),
-      .data_in(dram_axi_rdata),
-      .data_out(ddr3_rdata_decrypted)
-   );
-   
-   //assign ddr3_wdata_encrypted = xbar_mst_ports_req[MASTER_DRAM_IDX].w.data;
-   //assign ddr3_rdata_decrypted = dram_axi_rdata;
-
    logic                            dram_axi_awvalid;
    logic                            dram_axi_awready;
    logic [XbarCfg.AxiAddrWidth-1:0] dram_axi_awaddr;
@@ -1136,6 +1071,38 @@ module secure_soc (
    logic [XbarCfg.AxiDataWidth-1:0] dram_axi_rdata;
    logic [1:0]                      dram_axi_rresp;
    logic                            dram_axi_rlast;
+
+   // On-The-Fly Encryption/Decryption for DRAM (DDR3_AXI)
+   logic [XbarCfg.AxiDataWidth-1:0] ddr3_wdata_encrypted;
+   logic [XbarCfg.AxiDataWidth-1:0] ddr3_rdata_decrypted;
+   /*
+   reg [XbarCfg.AxiAddrWidth-1:0] ddr3_addr_holder;
+   always_ff @(posedge clkwiz_o or negedge rst_n) begin
+      if (~rst_n) begin
+         ddr3_addr_holder <= '0;
+      end
+      else if (xbar_mst_ports_req[MASTER_DRAM_IDX].ar_valid && dram_axi_arready) begin
+         ddr3_addr_holder <= xbar_mst_ports_req[MASTER_DRAM_IDX].ar.addr;
+      end
+   end
+
+   localparam DDR3_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
+
+   ctr_encoder_decoder #(.KEY(DDR3_CTR_KEY)) ddr3_ctr_enc (
+      .row_number(xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr),
+      .data_in(xbar_mst_ports_req[MASTER_DRAM_IDX].w.data),
+      .data_out(ddr3_wdata_encrypted)
+   );
+
+   ctr_encoder_decoder #(.KEY(DDR3_CTR_KEY)) ddr3_ctr_dec (
+      .row_number(ddr3_addr_holder),
+      .data_in(dram_axi_rdata),
+      .data_out(ddr3_rdata_decrypted)
+   );
+   */
+   
+   assign ddr3_wdata_encrypted = xbar_mst_ports_req[MASTER_DRAM_IDX].w.data;
+   assign ddr3_rdata_decrypted = dram_axi_rdata;
 
    assign dram_axi_awvalid = xbar_mst_ports_req[MASTER_DRAM_IDX].aw_valid;
    assign dram_axi_awaddr  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr;
@@ -1193,8 +1160,8 @@ module secure_soc (
 
    ddr3_axi #(
       .DDR_MHZ          ( `DDR_MHZ ),
-      .DDR_WRITE_LATENCY( 4 ),
-      .DDR_READ_LATENCY ( 4 )
+      .DDR_WRITE_LATENCY( `DDR_WRITE_LATENCY ),
+      .DDR_READ_LATENCY ( `DDR_READ_LATENCY )
    ) i_ddr3_axi (
       .clk_i   ( clkwiz_o ),
       .rst_i   ( ~rst_n   ),
