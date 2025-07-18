@@ -22,3 +22,9 @@
 [submodule "axi_riscv_atomics"]
 	path = axi_riscv_atomics
 	url = https://github.com/pulp-platform/axi_riscv_atomics
+[submodule "ibex"]
+	path = ibex
+	url = https://github.com/lowRISC/ibex
+[submodule "cv32e40p"]
+	path = cv32e40p
+	url = https://github.com/openhwgroup/cv32e40p

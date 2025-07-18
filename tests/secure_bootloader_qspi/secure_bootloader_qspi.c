@@ -2,7 +2,7 @@
 #include "qspi.h"
 //#include "uart.h"
 
-#define CODE_RAM_BASE_ADDR 0x00002000 //0x00010000
+#define CODE_RAM_BASE_ADDR 0x2000 //0x80000000 //0x00010000
 #define CODE_RAM (*(volatile uint32_t*) (CODE_RAM_BASE_ADDR))
 
 // AES constants
@@ -305,6 +305,7 @@ void secure_boot()
 static inline void update_trap_vector_base_address()
 {
     asm volatile (
+        //"li    t0, 0x80000000    \n"
         "li    t0, 0x2000    \n"
         "csrrw t0, mtvec,  t0 \n"
     );
@@ -312,7 +313,11 @@ static inline void update_trap_vector_base_address()
 
 static inline void jump_to_loaded_software()
 {
-    asm volatile ("j 0x2100");
+    asm volatile (
+        //"li    t0, 0x80000100 \n"
+        "li    t0, 0x2000 \n"
+        "jalr  x0, t0, 0 \n"
+    );
 }
 
 int main()

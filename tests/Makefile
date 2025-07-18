@@ -9,6 +9,8 @@ ASM = 0
 # make compile demo BOOT=1
 BOOT ?= 0
 
+SECURE_BOOT ?= 0
+
 WITHBOOTLOADER ?=
 WITHDRAM ?=
 
@@ -17,6 +19,12 @@ USE_COREMARK ?= 0
 ifeq ($(BOOT), 1)
     WITHBOOTLOADER := withbootloader
 endif
+
+#ifeq ($(SECURE_BOOT), 1)
+##    WITHBOOTLOADER := withbootloader
+## sram will use same linker
+#    WITHDRAM := withdram
+#endif
 
 ifeq ($(DRAM), 1)
     WITHDRAM := withdram
@@ -99,21 +107,34 @@ all:
 	$(RISCVTYPE)-objcopy -O verilog $(CPATH).riscv $(CPATH).vmem
 
 ## use this for qspi flash sim
-#ifeq ($(BOOT), 1)
-#	python3 ../tools/clear_adresses_for_qspi_boot.py -f $(CPATH).vmem --place_zero > $(CPATH).tmp
-#	mv $(CPATH).tmp $(CPATH).vmem
-#endif
+ifeq ($(BOOT), 1)
+	python3 ../tools/clear_adresses_for_qspi_boot.py -f $(CPATH).vmem --place_zero > $(CPATH).tmp
+	mv $(CPATH).tmp $(CPATH).vmem
+endif
+
+ifeq ($(SECURE_BOOT), 1)
+#	python3 ../tools/clear_adresses_for_qspi_boot_and_encrypt.py -f $(CPATH).vmem --place_zero > $(CPATH).tmp
+	python3 ../tools/clear_adresses_for_qspi_boot.py -f $(CPATH).vmem --place_zero > $(CPATH).tmp
+	mv $(CPATH).tmp $(CPATH).vmem
+#	python3 ../tools/encrypt_vmem.py -f $(CPATH).vmem > $(CPATH).tmp
+	python3 ../tools/encrypt_vmem_aes256.py -f $(CPATH).vmem > $(CPATH).tmp
+	mv $(CPATH).tmp $(CPATH)_secure.vmem
+endif
 
 ifeq ($(CFILE), bootloader)
-	python3 ../tools/generate_bootrom.py -f $(CPATH).hex --addr_width 14 > ../rtl/src/memory/bootrom.sv
+	python3 ../tools/generate_bootrom.py -f $(CPATH).hex --addr_width 32 > ../rtl/src/memory/bootrom.sv
 endif
 
 ifeq ($(CFILE), bootloader_dram)
-	python3 ../tools/generate_bootrom.py -f $(CPATH).hex --addr_width 14 > ../rtl/src/memory/bootrom.sv
+	python3 ../tools/generate_bootrom.py -f $(CPATH).hex --addr_width 32 > ../rtl/src/memory/bootrom.sv
 endif
 
 ifeq ($(CFILE), bootloader_sram)
-	python3 ../tools/generate_bootrom.py -f $(CPATH).hex --addr_width 14 > ../rtl/src/memory/bootrom.sv
+	python3 ../tools/generate_bootrom.py -f $(CPATH).hex --addr_width 32 > ../rtl/src/memory/bootrom.sv
+endif
+
+ifeq ($(CFILE), secure_bootloader_qspi)
+	python3 ../tools/generate_bootrom.py -f $(CPATH).hex --addr_width 32 > ../rtl/src/memory/bootrom.sv
 endif
 
 #.PHONY: $(CFILE)
