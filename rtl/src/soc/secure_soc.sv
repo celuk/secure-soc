@@ -1072,30 +1072,42 @@ module secure_soc (
    logic [1:0]                      dram_axi_rresp;
    logic                            dram_axi_rlast;
 
-   // On-The-Fly Encryption/Decryption for DRAM (DDR3_AXI)
+   // On-The-Fly Encryption/Decryption
    logic [XbarCfg.AxiDataWidth-1:0] ddr3_wdata_encrypted;
    logic [XbarCfg.AxiDataWidth-1:0] ddr3_rdata_decrypted;
+
    /*
-   reg [XbarCfg.AxiAddrWidth-1:0] ddr3_addr_holder;
+   localparam DDR3_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
+
+   //wire [XbarCfg.AxiAddrWidth-1:0] ddr3_w_addr_holder = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr;
+   reg [XbarCfg.AxiAddrWidth-1:0] ddr3_w_addr_holder;
    always_ff @(posedge clkwiz_o or negedge rst_n) begin
       if (~rst_n) begin
-         ddr3_addr_holder <= '0;
+         ddr3_w_addr_holder <= '0;
       end
-      else if (xbar_mst_ports_req[MASTER_DRAM_IDX].ar_valid && dram_axi_arready) begin
-         ddr3_addr_holder <= xbar_mst_ports_req[MASTER_DRAM_IDX].ar.addr;
+      else if (xbar_mst_ports_req[MASTER_DRAM_IDX].aw_valid && dram_axi_awready) begin
+         ddr3_w_addr_holder <= xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr;
       end
    end
 
-   localparam DDR3_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
-
    ctr_encoder_decoder #(.KEY(DDR3_CTR_KEY)) ddr3_ctr_enc (
-      .row_number(xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr),
+      .row_number(ddr3_w_addr_holder),
       .data_in(xbar_mst_ports_req[MASTER_DRAM_IDX].w.data),
       .data_out(ddr3_wdata_encrypted)
    );
 
+   reg [XbarCfg.AxiAddrWidth-1:0] ddr3_r_addr_holder;
+   always_ff @(posedge clkwiz_o or negedge rst_n) begin
+      if (~rst_n) begin
+         ddr3_r_addr_holder <= '0;
+      end
+      else if (xbar_mst_ports_req[MASTER_DRAM_IDX].ar_valid && dram_axi_arready) begin
+         ddr3_r_addr_holder <= xbar_mst_ports_req[MASTER_DRAM_IDX].ar.addr;
+      end
+   end
+
    ctr_encoder_decoder #(.KEY(DDR3_CTR_KEY)) ddr3_ctr_dec (
-      .row_number(ddr3_addr_holder),
+      .row_number(ddr3_r_addr_holder),
       .data_in(dram_axi_rdata),
       .data_out(ddr3_rdata_decrypted)
    );
