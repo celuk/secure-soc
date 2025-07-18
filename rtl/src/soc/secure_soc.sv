@@ -660,6 +660,8 @@ module secure_soc (
    logic [2:0]                      dram_axi_awsize;
    logic [1:0]                      dram_axi_awburst;
    logic [2:0]                      dram_axi_awprot;
+   logic [5:0]                      dram_axi_awatop;
+   logic                            dram_axi_awlock;
    logic                            dram_axi_wvalid;
    logic                            dram_axi_wready;
    logic [XbarCfg.AxiDataWidth-1:0] dram_axi_wdata;
@@ -677,6 +679,7 @@ module secure_soc (
    logic [2:0]                      dram_axi_arsize;
    logic [1:0]                      dram_axi_arburst;
    logic [2:0]                      dram_axi_arprot;
+   logic                            dram_axi_arlock;
    logic                            dram_axi_rvalid;
    logic                            dram_axi_rready;
    logic [AXI_ID_WIDTH_XBAR_MST-1:0]dram_axi_rid;
@@ -729,7 +732,86 @@ module secure_soc (
    logic [1:0]                      atomics_mst_rresp;
    logic                            atomics_mst_rlast;
    logic [0:0]                      atomics_mst_ruser;
-   
+
+   // On-The-Fly Encryption/Decryption signals
+   logic [XbarCfg.AxiDataWidth-1:0] ddr3_wdata_encrypted;
+   logic [XbarCfg.AxiDataWidth-1:0] ddr3_rdata_decrypted;
+   localparam DDR3_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
+
+   // Write Path Address Management
+   logic                               w_addr_fifo_push;
+   logic                               w_addr_fifo_pop;
+   logic [XbarCfg.AxiAddrWidth-1:0]    w_addr_fifo_data_i;
+   logic [XbarCfg.AxiAddrWidth-1:0]    w_addr_fifo_data_o;
+   logic                               w_addr_fifo_empty;
+   logic                               w_addr_fifo_full;
+   logic [XbarCfg.AxiAddrWidth-1:0]    write_addr_for_enc;
+   logic                               write_burst_active;
+
+   assign w_addr_fifo_push = dram_axi_awvalid && dram_axi_awready;
+   assign w_addr_fifo_data_i = dram_axi_awaddr;
+   assign w_addr_fifo_pop = dram_axi_wvalid && dram_axi_wready && !write_burst_active;
+
+   always_ff @(posedge clkwiz_o or negedge rst_n) begin
+       if (~rst_n) begin
+           write_burst_active <= 1'b0;
+       end else if (dram_axi_wvalid && dram_axi_wready) begin
+           write_burst_active <= !dram_axi_wlast;
+       end
+   end
+
+   always_ff @(posedge clkwiz_o or negedge rst_n) begin
+       if (~rst_n) begin
+           write_addr_for_enc <= '0;
+       end else if (w_addr_fifo_pop) begin
+           write_addr_for_enc <= w_addr_fifo_data_o;
+       end else if (dram_axi_wvalid && dram_axi_wready && write_burst_active) begin
+           write_addr_for_enc <= write_addr_for_enc + (XbarCfg.AxiDataWidth / 8);
+       end
+   end
+
+   fifo_v3 #(.DATA_WIDTH(XbarCfg.AxiAddrWidth), .DEPTH(16))
+   w_addr_fifo (.clk_i(clkwiz_o), .rst_ni(rst_n), .flush_i(1'b0), .testmode_i(1'b0), .full_o(w_addr_fifo_full), .empty_o(w_addr_fifo_empty), .usage_o(), .data_i(w_addr_fifo_data_i), .push_i(w_addr_fifo_push), .data_o(w_addr_fifo_data_o), .pop_i(w_addr_fifo_pop));
+
+   ctr_encoder_decoder #(.KEY(DDR3_CTR_KEY)) ddr3_ctr_enc (.row_number(write_addr_for_enc), .data_in(dram_axi_wdata), .data_out(ddr3_wdata_encrypted));
+
+   // Read Path Address Management
+   logic                               r_addr_fifo_push;
+   logic                               r_addr_fifo_pop;
+   logic [XbarCfg.AxiAddrWidth-1:0]    r_addr_fifo_data_i;
+   logic [XbarCfg.AxiAddrWidth-1:0]    r_addr_fifo_data_o;
+   logic                               r_addr_fifo_empty;
+   logic                               r_addr_fifo_full;
+   logic [XbarCfg.AxiAddrWidth-1:0]    read_addr_for_dec;
+   logic                               read_burst_active;
+
+   assign r_addr_fifo_push = dram_axi_arvalid && dram_axi_arready;
+   assign r_addr_fifo_data_i = dram_axi_araddr;
+   assign r_addr_fifo_pop = dram_axi_rvalid && dram_axi_rready && !read_burst_active;
+
+   always_ff @(posedge clkwiz_o or negedge rst_n) begin
+       if (~rst_n) begin
+           read_burst_active <= 1'b0;
+       end else if (dram_axi_rvalid && dram_axi_rready) begin
+           read_burst_active <= !dram_axi_rlast;
+       end
+   end
+
+   always_ff @(posedge clkwiz_o or negedge rst_n) begin
+       if (~rst_n) begin
+           read_addr_for_dec <= '0;
+       end else if (r_addr_fifo_pop) begin
+           read_addr_for_dec <= r_addr_fifo_data_o;
+       end else if (dram_axi_rvalid && dram_axi_rready && read_burst_active) begin
+           read_addr_for_dec <= read_addr_for_dec + (XbarCfg.AxiDataWidth / 8);
+       end
+   end
+
+   fifo_v3 #(.DATA_WIDTH(XbarCfg.AxiAddrWidth), .DEPTH(16))
+   r_addr_fifo (.clk_i(clkwiz_o), .rst_ni(rst_n), .flush_i(1'b0), .testmode_i(1'b0), .full_o(r_addr_fifo_full), .empty_o(r_addr_fifo_empty), .usage_o(), .data_i(r_addr_fifo_data_i), .push_i(r_addr_fifo_push), .data_o(r_addr_fifo_data_o), .pop_i(r_addr_fifo_pop));
+
+   ctr_encoder_decoder #(.KEY(DDR3_CTR_KEY)) ddr3_ctr_dec (.row_number(read_addr_for_dec), .data_in(dram_axi_rdata), .data_out(ddr3_rdata_decrypted));
+
    assign dram_axi_awvalid = xbar_mst_ports_req[MASTER_DRAM_IDX].aw_valid;
    assign dram_axi_awaddr  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr;
    assign dram_axi_awid    = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.id;
@@ -737,6 +819,8 @@ module secure_soc (
    assign dram_axi_awsize  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.size;
    assign dram_axi_awburst = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.burst;
    assign dram_axi_awprot  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.prot;
+   assign dram_axi_awatop  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.atop;
+   assign dram_axi_awlock  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.lock;
    assign dram_axi_wvalid  = xbar_mst_ports_req[MASTER_DRAM_IDX].w_valid;
    assign dram_axi_wdata   = xbar_mst_ports_req[MASTER_DRAM_IDX].w.data;
    assign dram_axi_wstrb   = xbar_mst_ports_req[MASTER_DRAM_IDX].w.strb;
@@ -748,6 +832,7 @@ module secure_soc (
    assign dram_axi_arsize  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.size;
    assign dram_axi_arburst = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.burst;
    assign dram_axi_arprot  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.prot;
+   assign dram_axi_arlock  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.lock;
    assign dram_axi_bready  = xbar_mst_ports_req[MASTER_DRAM_IDX].b_ready;
    assign dram_axi_rready  = xbar_mst_ports_req[MASTER_DRAM_IDX].r_ready;
 
@@ -759,7 +844,7 @@ module secure_soc (
    assign xbar_mst_ports_resp[MASTER_DRAM_IDX].b.resp   = dram_axi_bresp;
    assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r_valid  = dram_axi_rvalid;
    assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.id     = dram_axi_rid;
-   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.data   = dram_axi_rdata;
+   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.data   = ddr3_rdata_decrypted;
    assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.resp   = dram_axi_rresp;
    assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.last   = dram_axi_rlast;
 
@@ -772,15 +857,16 @@ module secure_soc (
        .RISCV_WORD_WIDTH   (32)
    ) i_axi_atomics (
        .clk_i(clkwiz_o),
-       .rst_ni(rst_n),
+       .rst_ni( (rst_ni & system_reset_o & pll_locked) || uart_dram_mode ),
+
        .slv_aw_addr_i   (dram_axi_awaddr),
        .slv_aw_prot_i   (dram_axi_awprot),
        .slv_aw_region_i ('0),
-       .slv_aw_atop_i   ({2'b0, xbar_mst_ports_req[MASTER_DRAM_IDX].aw.atop}),
+       .slv_aw_atop_i   ({2'b0, dram_axi_awatop}),
        .slv_aw_len_i    (dram_axi_awlen),
        .slv_aw_size_i   (dram_axi_awsize),
        .slv_aw_burst_i  (dram_axi_awburst),
-       .slv_aw_lock_i   (xbar_mst_ports_req[MASTER_DRAM_IDX].aw.lock),
+       .slv_aw_lock_i   (dram_axi_awlock),
        .slv_aw_cache_i  ('0),
        .slv_aw_qos_i    ('0),
        .slv_aw_id_i     (dram_axi_awid),
@@ -793,14 +879,14 @@ module secure_soc (
        .slv_ar_len_i    (dram_axi_arlen),
        .slv_ar_size_i   (dram_axi_arsize),
        .slv_ar_burst_i  (dram_axi_arburst),
-       .slv_ar_lock_i   (xbar_mst_ports_req[MASTER_DRAM_IDX].ar.lock),
+       .slv_ar_lock_i   (dram_axi_arlock),
        .slv_ar_cache_i  ('0),
        .slv_ar_qos_i    ('0),
        .slv_ar_id_i     (dram_axi_arid),
        .slv_ar_user_i   ('0),
        .slv_ar_ready_o  (dram_axi_arready),
        .slv_ar_valid_i  (dram_axi_arvalid),
-       .slv_w_data_i    (dram_axi_wdata),
+       .slv_w_data_i    (ddr3_wdata_encrypted),
        .slv_w_strb_i    (dram_axi_wstrb),
        .slv_w_user_i    ('0),
        .slv_w_last_i    (dram_axi_wlast),
@@ -818,6 +904,7 @@ module secure_soc (
        .slv_b_user_o    (),
        .slv_b_ready_i   (dram_axi_bready),
        .slv_b_valid_o   (dram_axi_bvalid),
+       
        .mst_aw_addr_o   (atomics_mst_awaddr),
        .mst_aw_prot_o   (atomics_mst_awprot),
        .mst_aw_region_o (atomics_mst_awregion),
