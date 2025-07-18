@@ -93,4 +93,4 @@ PERIPHERALS
 // SECURE_LAYER1 is the bootrom's itself compiling different bootloaders generates different bootroms
 // make compile bootloader
 // make compile secure_bootloader --> This assures SECURE_LAYER1
-`define SECURE_LAYER2 // CTR enc-dec lives on the bus, this assures keeping program encrypted in memory (sram or dram)
+//`define SECURE_LAYER2 // CTR enc-dec lives on the bus, this assures keeping program encrypted in memory (sram or dram)
