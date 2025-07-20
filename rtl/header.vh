@@ -84,8 +84,8 @@ PERIPHERALS
 
 // One can switch between different cores
 //`define CORE_CVA6
-`define CORE_CV32E40P
-//`define CORE_IBEX
+//`define CORE_CV32E40P
+`define CORE_IBEX
 
 `define SECOND_SRAM
 
