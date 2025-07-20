@@ -1,4 +1,4 @@
-// air_soc.sv
+// obi_demux.sv
 `timescale 1ns / 1ps
 
 `include "header.vh"

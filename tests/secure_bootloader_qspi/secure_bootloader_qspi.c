@@ -315,7 +315,7 @@ static inline void jump_to_loaded_software()
 {
     asm volatile (
         //"li    t0, 0x80000100 \n"
-        "li    t0, 0x2000 \n"
+        "li    t0, 0x2100 \n"
         "jalr  x0, t0, 0 \n"
     );
 }

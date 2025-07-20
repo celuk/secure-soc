@@ -2027,7 +2027,8 @@ logic               mem_req;
 
    ram32 #(
       .SIZE     (`RAM_SIZE / 4),
-      .INIT_FILE(`RAM_FPATH)
+      .INIT_FILE(`RAM_FPATH),
+      .USE_BOOTROM(`USE_BOOTROM)
    ) main_memory (
       .clk_i   (clkwiz_o),
       .rst_ni  (rst_ni),
