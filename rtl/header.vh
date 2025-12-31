@@ -79,13 +79,13 @@ PERIPHERALS
 
 // SECURE_LAYER1 is the bootrom's itself compiling different bootloaders generates different bootroms
 // make compile bootloader
-// make compile secure_bootloader --> This assures SECURE_LAYER1
-//`define SECURE_LAYER2 // CTR enc-dec lives on the bus, this assures keeping program encrypted in memory (sram or dram)
+// make compile secure_bootloader_qspi --> This assures SECURE_LAYER1
+`define SECURE_LAYER2 // CTR enc-dec lives on the bus, this assures keeping program encrypted in memory (sram or dram)
 
 // One can switch between different cores
-//`define CORE_CVA6
+`define CORE_CVA6
 //`define CORE_CV32E40P
-`define CORE_IBEX
+//`define CORE_IBEX
 
 `define SECOND_SRAM
 
@@ -106,13 +106,14 @@ PERIPHERALS
 
 //`define DDR_100MHZ
 
-`define ZC706
+//`define ZC706
 //`define DDR3_AXI
 `define DDR_MHZ 50
 `define DDR_WRITE_LATENCY 4
 `define DDR_READ_LATENCY 3
-`define DRAM_SIM
-//`define USE_SRAM
+//`define DRAM_SIM
+`define USE_SRAM
+`define QSPI_SIM
 `else
 //`define BASYS3
 //`define EXT_FLASH

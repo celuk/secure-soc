@@ -195,7 +195,7 @@ module secure_soc (
    `ifdef ZC706
    localparam int unsigned NUM_MASTERS_XBAR = 5; // RAM, UART, TIMER, DRAM, CLINT
    `elsif USE_SRAM
-   localparam int unsigned NUM_MASTERS_XBAR = 5;
+   localparam int unsigned NUM_MASTERS_XBAR = 6;
    `elsif DDR3_AXI
    localparam int unsigned NUM_MASTERS_XBAR = 5;
    `else
@@ -209,6 +209,7 @@ module secure_soc (
    localparam int unsigned MASTER_DRAM_IDX = 4;
    `elsif USE_SRAM
    localparam int unsigned MASTER_DRAM_IDX = 4;
+   localparam int unsigned MASTER_QSPI_IDX = 5;
    `elsif DDR3_AXI
    localparam int unsigned MASTER_DRAM_IDX = 4;
    `endif
@@ -246,6 +247,7 @@ module secure_soc (
       ,'{ start_addr: `DRAM_BASE_ADDR, end_addr: `DRAM_BASE_ADDR+ `DRAM_RANGE, idx: MASTER_DRAM_IDX }
       `elsif USE_SRAM
       ,'{ start_addr: `DDR3_AXI_BASE_ADDR, end_addr: `DDR3_AXI_BASE_ADDR+ `DDR3_AXI_RANGE, idx: MASTER_DRAM_IDX }
+      ,'{ start_addr: `QSPI_BASE_ADDR, end_addr: `QSPI_BASE_ADDR+ `QSPI_RANGE, idx: MASTER_QSPI_IDX }
       `elsif DDR3_AXI
       ,'{ start_addr: `DDR3_AXI_BASE_ADDR, end_addr: `DDR3_AXI_BASE_ADDR+ `DDR3_AXI_RANGE, idx: MASTER_DRAM_IDX }
       `endif
@@ -1102,6 +1104,174 @@ module secure_soc (
        .uart_dram_write_rst_i  (0)
    );
    `elsif USE_SRAM
+   logic qspi_cs_n_o;
+   logic qspi_sck_o;
+   wire [3:0] qspi_data_io;
+   wire [3:0] qspi_data_i;
+   wire [3:0] qspi_data_o;
+   wire [1:0] qspi_out_mod_o;
+
+   `ifdef QSPI_SIM
+   s25fl128s #(
+      .mem_file_name("../../../tests/demo/demo_secure.vmem"),
+      .otp_file_name("none"),
+      .AddrRANGE(24'h00FFFF),
+      .TimingModel   ( "S25FL128SAGMFI000_F_30pF" ),
+      .UserPreload   (1)
+   ) flash (
+      .SI(qspi_data_io[0]),
+      .SO(qspi_data_io[1]),
+      .SCK(qspi_sck_o),
+      .CSNeg(qspi_cs_n_o),
+      .WPNeg(qspi_data_io[2]),
+      .HOLDNeg(qspi_data_io[3])
+   );
+   `endif
+
+   `ifdef BASYS3
+   IOBUF io_buf0 (.I(qspi_data_o[0]), .O(qspi_data_i[0]), .T(~(|qspi_out_mod_o)), .IO(qspi_data_io[0]));
+   IOBUF io_buf1 (.I(qspi_data_o[1]), .O(qspi_data_i[1]), .T(~qspi_out_mod_o[1]), .IO(qspi_data_io[1]));
+   IOBUF io_buf2 (.I(qspi_data_o[2]), .O(qspi_data_i[2]), .T(~(&qspi_out_mod_o)), .IO(qspi_data_io[2]));
+   IOBUF io_buf3 (.I(qspi_data_o[3]), .O(qspi_data_i[3]), .T(~(&qspi_out_mod_o)), .IO(qspi_data_io[3]));
+
+   `ifndef EXT_FLASH
+   STARTUPE2 #(
+        .PROG_USR("FALSE"),
+        .SIM_CCLK_FREQ(0.0)
+    ) STARTUPE2_inst (
+       .CFGCLK(),
+       .CFGMCLK(),
+       .EOS(),
+       .PREQ(),
+       .CLK(1'b0),
+       .GSR(1'b0),
+       .GTS(1'b0),
+       .KEYCLEARB(1'b0),
+       .PACK(1'b0),
+       .USRCCLKO(qspi_sck_o),
+       .USRCCLKTS(1'b0),
+       .USRDONEO(1'b1),
+       .USRDONETS(1'b1)
+    );
+   `endif
+   `else
+   assign qspi_data_io[0] = |qspi_out_mod_o   ? qspi_data_o[0] : 1'bZ;
+   assign qspi_data_io[1] = qspi_out_mod_o[1] ? qspi_data_o[1] : 1'bZ;
+   assign qspi_data_io[2] = &qspi_out_mod_o   ? qspi_data_o[2] : 1'bZ;
+   assign qspi_data_io[3] = &qspi_out_mod_o   ? qspi_data_o[3] : 1'bZ;
+   assign qspi_data_i = qspi_data_io;
+   `endif
+
+   logic                            qspi_axi_awvalid;
+   logic                            qspi_axi_awready;
+   logic [XbarCfg.AxiAddrWidth-1:0] qspi_axi_awaddr;
+   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_awid;
+   logic [7:0]                      qspi_axi_awlen;
+   logic [2:0]                      qspi_axi_awsize;
+   logic [1:0]                      qspi_axi_awburst;
+   logic [2:0]                      qspi_axi_awprot;
+   logic                            qspi_axi_wvalid;
+   logic                            qspi_axi_wready;
+   logic [XbarCfg.AxiDataWidth-1:0] qspi_axi_wdata;
+   logic [XbarCfg.AxiDataWidth/8-1:0] qspi_axi_wstrb;
+   logic                            qspi_axi_wlast;
+   logic                            qspi_axi_bvalid;
+   logic                            qspi_axi_bready;
+   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_bid;
+   logic [1:0]                      qspi_axi_bresp;
+   logic                            qspi_axi_arvalid;
+   logic                            qspi_axi_arready;
+   logic [XbarCfg.AxiAddrWidth-1:0] qspi_axi_araddr;
+   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_arid;
+   logic [7:0]                      qspi_axi_arlen;
+   logic [2:0]                      qspi_axi_arsize;
+   logic [1:0]                      qspi_axi_arburst;
+   logic [2:0]                      qspi_axi_arprot;
+   logic                            qspi_axi_rvalid;
+   logic                            qspi_axi_rready;
+   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_rid;
+   logic [XbarCfg.AxiDataWidth-1:0] qspi_axi_rdata;
+   logic [1:0]                      qspi_axi_rresp;
+   logic                            qspi_axi_rlast;
+
+   assign qspi_axi_awvalid = xbar_mst_ports_req[MASTER_QSPI_IDX].aw_valid;
+   assign qspi_axi_awaddr  = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.addr;
+   assign qspi_axi_awid    = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.id;
+   assign qspi_axi_awlen   = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.len;
+   assign qspi_axi_awsize  = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.size;
+   assign qspi_axi_awburst = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.burst;
+   assign qspi_axi_awprot  = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.prot;
+   assign qspi_axi_wvalid  = xbar_mst_ports_req[MASTER_QSPI_IDX].w_valid;
+   assign qspi_axi_wdata   = xbar_mst_ports_req[MASTER_QSPI_IDX].w.data;
+   assign qspi_axi_wstrb   = xbar_mst_ports_req[MASTER_QSPI_IDX].w.strb;
+   assign qspi_axi_wlast   = xbar_mst_ports_req[MASTER_QSPI_IDX].w.last;
+   assign qspi_axi_arvalid = xbar_mst_ports_req[MASTER_QSPI_IDX].ar_valid;
+   assign qspi_axi_araddr  = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.addr;
+   assign qspi_axi_arid    = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.id;
+   assign qspi_axi_arlen   = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.len;
+   assign qspi_axi_arsize  = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.size;
+   assign qspi_axi_arburst = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.burst;
+   assign qspi_axi_arprot  = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.prot;
+   assign qspi_axi_bready  = xbar_mst_ports_req[MASTER_QSPI_IDX].b_ready;
+   assign qspi_axi_rready  = xbar_mst_ports_req[MASTER_QSPI_IDX].r_ready;
+
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].aw_ready = qspi_axi_awready;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].w_ready  = qspi_axi_wready;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].ar_ready = qspi_axi_arready;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].b_valid  = qspi_axi_bvalid;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].b.id     = qspi_axi_bid;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].b.resp   = qspi_axi_bresp;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r_valid  = qspi_axi_rvalid;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.id     = qspi_axi_rid;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.data   = qspi_axi_rdata;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.resp   = qspi_axi_rresp;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.last   = qspi_axi_rlast;
+
+   qspi_controller_axi #(
+       .AXI_ID_WIDTH(AXI_ID_WIDTH_XBAR_MST),
+       .AXI_ADDR_WIDTH(XbarCfg.AxiAddrWidth),
+       .AXI_DATA_WIDTH(XbarCfg.AxiDataWidth)
+   ) qspi_dut (
+       .clk_i(clkwiz_o),
+       .rst_ni(rst_n),
+       .s_axi_awvalid(qspi_axi_awvalid),
+       .s_axi_awready(qspi_axi_awready),
+       .s_axi_awaddr(qspi_axi_awaddr),
+       .s_axi_awid(qspi_axi_awid),
+       .s_axi_awlen(qspi_axi_awlen),
+       .s_axi_awsize(qspi_axi_awsize),
+       .s_axi_awburst(qspi_axi_awburst),
+       .s_axi_awprot(qspi_axi_awprot),
+       .s_axi_wvalid(qspi_axi_wvalid),
+       .s_axi_wready(qspi_axi_wready),
+       .s_axi_wdata(qspi_axi_wdata),
+       .s_axi_wstrb(qspi_axi_wstrb),
+       .s_axi_wlast(qspi_axi_wlast),
+       .s_axi_bvalid(qspi_axi_bvalid),
+       .s_axi_bready(qspi_axi_bready),
+       .s_axi_bid(qspi_axi_bid),
+       .s_axi_bresp(qspi_axi_bresp),
+       .s_axi_arvalid(qspi_axi_arvalid),
+       .s_axi_arready(qspi_axi_arready),
+       .s_axi_araddr(qspi_axi_araddr),
+       .s_axi_arid(qspi_axi_arid),
+       .s_axi_arlen(qspi_axi_arlen),
+       .s_axi_arsize(qspi_axi_arsize),
+       .s_axi_arburst(qspi_axi_arburst),
+       .s_axi_arprot(qspi_axi_arprot),
+       .s_axi_rvalid(qspi_axi_rvalid),
+       .s_axi_rready(qspi_axi_rready),
+       .s_axi_rid(qspi_axi_rid),
+       .s_axi_rdata(qspi_axi_rdata),
+       .s_axi_rresp(qspi_axi_rresp),
+       .s_axi_rlast(qspi_axi_rlast),
+       .qspi_data_i(qspi_data_i),
+       .qspi_data_o(qspi_data_o),
+       .qspi_out_mod_o(qspi_out_mod_o),
+       .qspi_cs_n_o(qspi_cs_n_o),
+       .qspi_sck_o(qspi_sck_o)
+   );
+
    logic        ram8_req_i;
    logic        ram8_we_i;
    logic [AdapterObiCfg.DataWidth/8-1:0] ram8_be_i;

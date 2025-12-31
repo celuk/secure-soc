@@ -7,7 +7,7 @@ from cocotb.runner import get_runner
 SCRIPT_DIR = Path(os.path.realpath(__file__)).parent.absolute()
 
 # "cva6" # "cv32e40p" # "ibex"
-CORE = "ibex"
+CORE = "cva6"
 
 def run_test(simulator: str, test_file: Path, top_module: str, waves: bool, cfile: str):
     hdl_dir = Path(SCRIPT_DIR / "../../rtl")
