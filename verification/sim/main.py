@@ -270,10 +270,11 @@ def run_test(simulator: str, test_file: Path, top_module: str, waves: bool, cfil
         xrun_top = ":" if self.hdl_toplevel_lang == "vhdl" else self.sim_hdl_toplevel
 
         input_script = (
-            f"@database -open cocotb_waves -default;"
-            f"probe -database cocotb_waves -create {xrun_top} -all -memories -variables -depth all;"
-        #    f"probe -create -packed 131072 *;"
-            f"run;"
+        #    f"@database -open cocotb_waves -default;"
+        #    f"probe -database cocotb_waves -create {xrun_top} -all -memories -variables -depth all;"
+        ##    f"probe -create -packed 131072 *;"
+        #    f"run;"
+            f"@run;"
             f"exit;"
             if self.waves
             else "@run; exit;"
