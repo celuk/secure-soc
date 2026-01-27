@@ -12,7 +12,9 @@
 `endif
 
 module secure_soc (
-   `ifdef ZC706
+   `ifdef ASIC
+   input  wire clk_i,
+   `elsif ZC706
    input  wire clk_p,
    input  wire clk_n,
    `elsif DDR3_AXI
@@ -24,29 +26,30 @@ module secure_soc (
 
    input wire rst_ni,
 
-   //input  wire uart_rx_i,
-   
    input  wire program_rx_i,
    output wire prog_mode_led_o,
    
    output wire uart_tx_o
 
    `ifndef ZC706
-   `ifndef USE_SRAM
+   //`ifndef USE_SRAM
    `ifndef DDR3_AXI
    `ifndef QSPI_SIM
    ,output wire qspi_cs_n_o
    `ifdef EXT_FLASH
    ,output wire qspi_sck_o
+   `elsif ASIC
+   ,output wire qspi_sck_o
    `endif
    ,inout wire [3:0] qspi_data_io
    `endif
-   `endif
+   //`endif
    `endif
    `endif
 
    `ifndef DRAM_SIM
-   `ifdef ZC706
+   `ifdef ASIC
+   `elsif ZC706
    ,output wire ddr3_reset_n
    ,output wire ddr3_cke
    ,output wire ddr3_ck_p
@@ -84,8 +87,7 @@ module secure_soc (
    `endif
 );
 
-// This part is common for the cores
-   wire uart_rx_i;
+   //wire uart_rx_i;
 
    logic system_reset_o;
    logic uart_dram_write_rst;
@@ -100,6 +102,9 @@ module secure_soc (
          .locked(clkwiz_locked)
       );
       wire rst_n = rst_ni & system_reset_o & clkwiz_locked;
+   `elsif ASIC
+      wire clkwiz_o = clk_i;
+      wire rst_n = rst_ni & system_reset_o;
    `elsif ZC706
       wire pll_locked;
       wire clk100;
@@ -108,19 +113,16 @@ module secure_soc (
       wire clk_ddr_dqs;
       wire clk_i;
       clk_wiz_0 u_pll
-      //clk_wiz_1 u_pll
       (
          .clk_in1_p(clk_p),
          .clk_in1_n(clk_n)
 
          ,.reset(~rst_ni)
-
-         // first values for 100mhz, second values for 50mhz
-         ,.clk_out1(clk100)      // 100, 50
-         ,.clk_out2(clk_ddr)     // 400, 200
-         ,.clk_out3(clk_ref)     // 200, 200
-         ,.clk_out4(clk_ddr_dqs) // 400, 200 (phase 90)
-         ,.clk_out5(clk_i)       // 100, 50
+         ,.clk_out1(clk100)      
+         ,.clk_out2(clk_ddr)     
+         ,.clk_out3(clk_ref)     
+         ,.clk_out4(clk_ddr_dqs) 
+         ,.clk_out5(clk_i)       
          ,.locked(pll_locked)
       );
 
@@ -134,19 +136,16 @@ module secure_soc (
       wire clk_ddr_dqs;
       wire clk_i;
       clk_wiz_0 u_pll
-      //clk_wiz_1 u_pll
       (
          .clk_in1_p(clk_p),
          .clk_in1_n(clk_n)
 
          ,.reset(~rst_ni)
-
-         // first values for 100mhz, second values for 50mhz
-         ,.clk_out1(clk100)      // 100, 50
-         ,.clk_out2(clk_ddr)     // 400, 200
-         ,.clk_out3(clk_ref)     // 200, 200
-         ,.clk_out4(clk_ddr_dqs) // 400, 200 (phase 90)
-         ,.clk_out5(clk_i)       // 100, 50
+         ,.clk_out1(clk100)      
+         ,.clk_out2(clk_ddr)     
+         ,.clk_out3(clk_ref)     
+         ,.clk_out4(clk_ddr_dqs) 
+         ,.clk_out5(clk_i)       
          ,.locked(pll_locked)
       );
 
@@ -191,9 +190,11 @@ module secure_soc (
       .noc_resp_i           ( cva6_axi_resp                )
    );
 
-   localparam int unsigned NUM_SLAVES_XBAR = 1; // CVA6
-   `ifdef ZC706
-   localparam int unsigned NUM_MASTERS_XBAR = 5; // RAM, UART, TIMER, DRAM, CLINT
+   localparam int unsigned NUM_SLAVES_XBAR = 1; 
+   `ifdef ASIC
+   localparam int unsigned NUM_MASTERS_XBAR = 6;
+   `elsif ZC706
+   localparam int unsigned NUM_MASTERS_XBAR = 5; 
    `elsif USE_SRAM
    localparam int unsigned NUM_MASTERS_XBAR = 6;
    `elsif DDR3_AXI
@@ -205,7 +206,10 @@ module secure_soc (
    localparam int unsigned MASTER_UART_IDX = 1;
    localparam int unsigned MASTER_TIMER_IDX = 2;
    localparam int unsigned MASTER_CLINT_IDX = 3;
-   `ifdef ZC706 
+   `ifdef ASIC
+   localparam int unsigned MASTER_DRAM_IDX = 4;
+   localparam int unsigned MASTER_QSPI_IDX = 5;
+   `elsif ZC706 
    localparam int unsigned MASTER_DRAM_IDX = 4;
    `elsif USE_SRAM
    localparam int unsigned MASTER_DRAM_IDX = 4;
@@ -243,7 +247,10 @@ module secure_soc (
       '{ start_addr: `UART_BASE_ADDR,  end_addr: `UART_BASE_ADDR + `UART_RANGE,  idx: MASTER_UART_IDX },
       '{ start_addr: `TIMER_BASE_ADDR, end_addr: `TIMER_BASE_ADDR+ `TIMER_RANGE, idx: MASTER_TIMER_IDX },
       '{ start_addr: `CLINT_BASE_ADDR, end_addr: `CLINT_BASE_ADDR + `CLINT_RANGE, idx: MASTER_CLINT_IDX }
-      `ifdef ZC706 
+      `ifdef ASIC
+      ,'{ start_addr: `DDR3_AXI_BASE_ADDR, end_addr: `DDR3_AXI_BASE_ADDR+ `DDR3_AXI_RANGE, idx: MASTER_DRAM_IDX }
+      ,'{ start_addr: `QSPI_BASE_ADDR, end_addr: `QSPI_BASE_ADDR+ `QSPI_RANGE, idx: MASTER_QSPI_IDX }
+      `elsif ZC706 
       ,'{ start_addr: `DRAM_BASE_ADDR, end_addr: `DRAM_BASE_ADDR+ `DRAM_RANGE, idx: MASTER_DRAM_IDX }
       `elsif USE_SRAM
       ,'{ start_addr: `DDR3_AXI_BASE_ADDR, end_addr: `DDR3_AXI_BASE_ADDR+ `DDR3_AXI_RANGE, idx: MASTER_DRAM_IDX }
@@ -323,7 +330,7 @@ module secure_soc (
            clk_rtc <= 0;
        end
        else begin
-           if (count == 50/2 - 1) begin // 50 MHz to 1MHz
+           if (count == 50/2 - 1) begin 
                clk_rtc <= ~clk_rtc;
                count   <= 0;
            end
@@ -428,8 +435,6 @@ module secure_soc (
    assign mem_obi_rsp.r.rid   = mem_obi_req.a.aid;
    assign mem_obi_rsp.r.err  = 1'b0;
 
-   // TODO: Handle atomics with wrapper
-
    logic uart_dram_write_we;
    logic [31:0] uart_dram_write_addr;
    logic [31:0] uart_dram_write_data;
@@ -439,7 +444,7 @@ module secure_soc (
       .INIT_FILE(`RAM_FPATH)
    ) main_memory (
       .clk_i   (clkwiz_o),
-      .rst_ni  (rst_ni `ifdef BASYS3 & clkwiz_locked `endif), // pll_locked
+      .rst_ni  (rst_ni `ifdef BASYS3 & clkwiz_locked `endif),
       .req_i   ( ram_req_i      ),
       .we_i    ( ram_we_i       ),
       .be_i    ( ram_be_i       ),
@@ -511,7 +516,7 @@ module secure_soc (
    assign xbar_mst_ports_resp[MASTER_UART_IDX].r.id     = uart_axi_rid;
    assign xbar_mst_ports_resp[MASTER_UART_IDX].r.data   = uart_axi_rdata;
    assign xbar_mst_ports_resp[MASTER_UART_IDX].r.resp   = uart_axi_rresp;
-   assign xbar_mst_ports_resp[MASTER_UART_IDX].r.last   = 1'b1; // AXI-Lite
+   assign xbar_mst_ports_resp[MASTER_UART_IDX].r.last   = 1'b1; 
 
    uart_controller_axi #(
        .AXI_ID_WIDTH  (AXI_ID_WIDTH_XBAR_MST),
@@ -532,7 +537,7 @@ module secure_soc (
        .s_axi_rvalid (uart_axi_rvalid),  .s_axi_rready (uart_axi_rready),
        .s_axi_rid    (uart_axi_rid),     .s_axi_rdata  (uart_axi_rdata),
        .s_axi_rresp  (uart_axi_rresp),
-       .rx_i    ( uart_rx_i     ), .tx_o    ( uart_tx_o     )
+       .rx_i    ( program_rx_i     ), .tx_o    ( uart_tx_o     )
    );
 
    logic                            timer_axi_awvalid;
@@ -634,9 +639,6 @@ module secure_soc (
    wire [1:0] ddr3_dqs_n;
    wire [15:0] ddr3_dq;
 
-   //`define den1024Mb
-   //`include "1024Mb_ddr3_parameters.vh"
-
    ddr3 ddr3_dut (
       .rst_n  (ddr3_reset_n),
       .ck     (ddr3_ck_p),
@@ -657,7 +659,234 @@ module secure_soc (
    );
    `endif
 
-   `ifdef ZC706
+   `ifdef ASIC
+   wire [3:0] qspi_data_i;
+   wire [3:0] qspi_data_o;
+   wire [1:0] qspi_out_mod_o;
+
+   assign qspi_data_io[0] = |qspi_out_mod_o   ? qspi_data_o[0] : 1'bZ;
+   assign qspi_data_io[1] = qspi_out_mod_o[1] ? qspi_data_o[1] : 1'bZ;
+   assign qspi_data_io[2] = &qspi_out_mod_o   ? qspi_data_o[2] : 1'bZ;
+   assign qspi_data_io[3] = &qspi_out_mod_o   ? qspi_data_o[3] : 1'bZ;
+   assign qspi_data_i = qspi_data_io;
+
+   logic                            qspi_axi_awvalid;
+   logic                            qspi_axi_awready;
+   logic [XbarCfg.AxiAddrWidth-1:0] qspi_axi_awaddr;
+   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_awid;
+   logic [7:0]                      qspi_axi_awlen;
+   logic [2:0]                      qspi_axi_awsize;
+   logic [1:0]                      qspi_axi_awburst;
+   logic [2:0]                      qspi_axi_awprot;
+   logic                            qspi_axi_wvalid;
+   logic                            qspi_axi_wready;
+   logic [XbarCfg.AxiDataWidth-1:0] qspi_axi_wdata;
+   logic [XbarCfg.AxiDataWidth/8-1:0] qspi_axi_wstrb;
+   logic                            qspi_axi_wlast;
+   logic                            qspi_axi_bvalid;
+   logic                            qspi_axi_bready;
+   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_bid;
+   logic [1:0]                      qspi_axi_bresp;
+   logic                            qspi_axi_arvalid;
+   logic                            qspi_axi_arready;
+   logic [XbarCfg.AxiAddrWidth-1:0] qspi_axi_araddr;
+   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_arid;
+   logic [7:0]                      qspi_axi_arlen;
+   logic [2:0]                      qspi_axi_arsize;
+   logic [1:0]                      qspi_axi_arburst;
+   logic [2:0]                      qspi_axi_arprot;
+   logic                            qspi_axi_rvalid;
+   logic                            qspi_axi_rready;
+   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_rid;
+   logic [XbarCfg.AxiDataWidth-1:0] qspi_axi_rdata;
+   logic [1:0]                      qspi_axi_rresp;
+   logic                            qspi_axi_rlast;
+
+   assign qspi_axi_awvalid = xbar_mst_ports_req[MASTER_QSPI_IDX].aw_valid;
+   assign qspi_axi_awaddr  = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.addr;
+   assign qspi_axi_awid    = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.id;
+   assign qspi_axi_awlen   = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.len;
+   assign qspi_axi_awsize  = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.size;
+   assign qspi_axi_awburst = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.burst;
+   assign qspi_axi_awprot  = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.prot;
+   assign qspi_axi_wvalid  = xbar_mst_ports_req[MASTER_QSPI_IDX].w_valid;
+   assign qspi_axi_wdata   = xbar_mst_ports_req[MASTER_QSPI_IDX].w.data;
+   assign qspi_axi_wstrb   = xbar_mst_ports_req[MASTER_QSPI_IDX].w.strb;
+   assign qspi_axi_wlast   = xbar_mst_ports_req[MASTER_QSPI_IDX].w.last;
+   assign qspi_axi_arvalid = xbar_mst_ports_req[MASTER_QSPI_IDX].ar_valid;
+   assign qspi_axi_araddr  = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.addr;
+   assign qspi_axi_arid    = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.id;
+   assign qspi_axi_arlen   = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.len;
+   assign qspi_axi_arsize  = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.size;
+   assign qspi_axi_arburst = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.burst;
+   assign qspi_axi_arprot  = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.prot;
+   assign qspi_axi_bready  = xbar_mst_ports_req[MASTER_QSPI_IDX].b_ready;
+   assign qspi_axi_rready  = xbar_mst_ports_req[MASTER_QSPI_IDX].r_ready;
+
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].aw_ready = qspi_axi_awready;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].w_ready  = qspi_axi_wready;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].ar_ready = qspi_axi_arready;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].b_valid  = qspi_axi_bvalid;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].b.id     = qspi_axi_bid;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].b.resp   = qspi_axi_bresp;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r_valid  = qspi_axi_rvalid;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.id     = qspi_axi_rid;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.data   = qspi_axi_rdata;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.resp   = qspi_axi_rresp;
+   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.last   = qspi_axi_rlast;
+
+   qspi_controller_axi #(
+       .AXI_ID_WIDTH(AXI_ID_WIDTH_XBAR_MST),
+       .AXI_ADDR_WIDTH(XbarCfg.AxiAddrWidth),
+       .AXI_DATA_WIDTH(XbarCfg.AxiDataWidth)
+   ) qspi_dut (
+       .clk_i(clkwiz_o),
+       .rst_ni(rst_n),
+       .s_axi_awvalid(qspi_axi_awvalid),
+       .s_axi_awready(qspi_axi_awready),
+       .s_axi_awaddr(qspi_axi_awaddr),
+       .s_axi_awid(qspi_axi_awid),
+       .s_axi_awlen(qspi_axi_awlen),
+       .s_axi_awsize(qspi_axi_awsize),
+       .s_axi_awburst(qspi_axi_awburst),
+       .s_axi_awprot(qspi_axi_awprot),
+       .s_axi_wvalid(qspi_axi_wvalid),
+       .s_axi_wready(qspi_axi_wready),
+       .s_axi_wdata(qspi_axi_wdata),
+       .s_axi_wstrb(qspi_axi_wstrb),
+       .s_axi_wlast(qspi_axi_wlast),
+       .s_axi_bvalid(qspi_axi_bvalid),
+       .s_axi_bready(qspi_axi_bready),
+       .s_axi_bid(qspi_axi_bid),
+       .s_axi_bresp(qspi_axi_bresp),
+       .s_axi_arvalid(qspi_axi_arvalid),
+       .s_axi_arready(qspi_axi_arready),
+       .s_axi_araddr(qspi_axi_araddr),
+       .s_axi_arid(qspi_axi_arid),
+       .s_axi_arlen(qspi_axi_arlen),
+       .s_axi_arsize(qspi_axi_arsize),
+       .s_axi_arburst(qspi_axi_arburst),
+       .s_axi_arprot(qspi_axi_arprot),
+       .s_axi_rvalid(qspi_axi_rvalid),
+       .s_axi_rready(qspi_axi_rready),
+       .s_axi_rid(qspi_axi_rid),
+       .s_axi_rdata(qspi_axi_rdata),
+       .s_axi_rresp(qspi_axi_rresp),
+       .s_axi_rlast(qspi_axi_rlast),
+       .qspi_data_i(qspi_data_i),
+       .qspi_data_o(qspi_data_o),
+       .qspi_out_mod_o(qspi_out_mod_o),
+       .qspi_cs_n_o(qspi_cs_n_o),
+       .qspi_sck_o(qspi_sck_o)
+   );
+
+   logic        ram8_req_i;
+   logic        ram8_we_i;
+   logic [AdapterObiCfg.DataWidth/8-1:0] ram8_be_i;
+   logic [AdapterObiCfg.AddrWidth-1:0] ram8_addr_i;
+   logic [AdapterObiCfg.DataWidth-1:0] ram8_wdata_i;
+   logic        ram8_rvalid_o;
+   logic [AdapterObiCfg.DataWidth-1:0] ram8_rdata_o;
+
+   logic [AdapterObiCfg.DataWidth-1:0] sram_wdata_encrypted;
+   logic [AdapterObiCfg.DataWidth-1:0] sram_rdata_decrypted;
+
+   `ifdef SECURE_LAYER2
+   reg [AdapterObiCfg.AddrWidth-1:0] sram_addr_holder;
+   always_ff @(posedge clkwiz_o or negedge rst_n) begin
+      if (~rst_n) begin
+         sram_addr_holder <= '0;
+      end
+      else if (mem8_obi_req.req && !mem8_obi_req.a.we) begin
+         sram_addr_holder <= mem8_obi_req.a.addr;
+      end
+   end
+
+   localparam SRAM_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
+
+   ctr_encoder_decoder #(.KEY(SRAM_CTR_KEY)) sram_ctr_enc (
+      .row_number(mem8_obi_req.a.addr),
+      .data_in(mem8_obi_req.a.wdata),
+      .data_out(sram_wdata_encrypted)
+   );
+
+   ctr_encoder_decoder #(.KEY(SRAM_CTR_KEY)) sram_ctr_dec (
+      .row_number(sram_addr_holder),
+      .data_in(ram8_rdata_o),
+      .data_out(sram_rdata_decrypted)
+   );
+   `else
+   assign sram_wdata_encrypted = mem8_obi_req.a.wdata;
+   assign sram_rdata_decrypted = ram8_rdata_o;
+   `endif
+
+   adapter_obi_req_t mem8_obi_req;
+   adapter_obi_rsp_t mem8_obi_rsp;
+
+   axi_to_obi #(
+      .ObiCfg         ( AdapterObiCfg          ),
+      .obi_req_t      ( adapter_obi_req_t      ),
+      .obi_rsp_t      ( adapter_obi_rsp_t      ),
+      .obi_a_chan_t   ( adapter_obi_a_chan_t   ),
+      .obi_r_chan_t   ( adapter_obi_r_chan_t   ),
+      .AxiAddrWidth   ( XbarCfg.AxiAddrWidth   ),
+      .AxiDataWidth   ( XbarCfg.AxiDataWidth   ),
+      .AxiIdWidth     ( AXI_ID_WIDTH_XBAR_MST  ),
+      .AxiUserWidth   ( cva6_config_pkg::CVA6ConfigDataUserWidth ),
+      .MaxTrans       ( AXI_MAX_TRANS          ),
+      .axi_req_t      ( ariane_axi::req_t      ),
+      .axi_rsp_t      ( ariane_axi::resp_t     )
+   ) i_axi_to_obi_mem8 (
+      .clk_i        ( clkwiz_o                            ),
+      .rst_ni       ( rst_n                               ),
+      .testmode_i   ( 1'b0                                ),
+      .axi_req_i    ( xbar_mst_ports_req[MASTER_DRAM_IDX]  ),
+      .axi_rsp_o    ( xbar_mst_ports_resp[MASTER_DRAM_IDX] ),
+      .obi_req_o    ( mem8_obi_req                         ),
+      .obi_rsp_i    ( mem8_obi_rsp                         ),
+      .req_aw_id_o (), .req_aw_user_o (), .req_w_user_o (),
+      .req_write_aid_i ('0),.req_write_auser_i ('0),.req_write_wuser_i ('0),
+      .req_ar_id_o (), .req_ar_user_o (),
+      .req_read_aid_i ('0),.req_read_auser_i ('0),
+      .rsp_write_aw_user_o (), .rsp_write_w_user_o (), .rsp_write_bank_strb_o (),
+      .rsp_write_rid_o (), .rsp_write_ruser_o (), .rsp_write_last_o (),
+      .rsp_write_hs_o (), .rsp_b_user_i ('0),
+      .rsp_read_ar_user_o (), .rsp_read_size_enable_o (), .rsp_read_rid_o (),
+      .rsp_read_ruser_o (), .rsp_r_user_i ('0)
+   );
+
+   assign ram8_req_i   = mem8_obi_req.req;
+   assign ram8_we_i    = mem8_obi_req.a.we;
+   assign ram8_addr_i  = mem8_obi_req.a.addr[30:0];
+   assign ram8_wdata_i = sram_wdata_encrypted;
+   assign ram8_be_i    = mem8_obi_req.a.be;
+
+   assign mem8_obi_rsp.gnt    = 1;
+   assign mem8_obi_rsp.rvalid = ram8_rvalid_o;
+   assign mem8_obi_rsp.r.rdata = sram_rdata_decrypted;
+   assign mem8_obi_rsp.r.rid   = mem8_obi_req.a.aid;
+   assign mem8_obi_rsp.r.err  = 1'b0;
+
+   ram32 #(
+      .SIZE     ('h40000/4),
+      .INIT_FILE(`RAM_FPATH),
+      .USE_BOOTROM(0)
+   ) main_memory8 (
+      .clk_i   (clkwiz_o),
+      .rst_ni  (rst_n),
+      .req_i   ( ram8_req_i      ),
+      .we_i    ( ram8_we_i       ),
+      .be_i    ( ram8_be_i       ),
+      .addr_i  ( ram8_addr_i     ),
+      .wdata_i ( ram8_wdata_i    ),
+      .rvalid_o( ram8_rvalid_o   ),
+      .rdata_o ( ram8_rdata_o    )
+
+      ,.program_rx_i   (    )
+      ,.system_reset_o (  )
+      ,.prog_mode_led_o( )
+   );
+   `elsif ZC706
    logic                            dram_axi_awvalid;
    logic                            dram_axi_awready;
    logic [XbarCfg.AxiAddrWidth-1:0] dram_axi_awaddr;
@@ -1162,71 +1391,6 @@ module secure_soc (
    assign qspi_data_i = qspi_data_io;
    `endif
 
-   logic                            qspi_axi_awvalid;
-   logic                            qspi_axi_awready;
-   logic [XbarCfg.AxiAddrWidth-1:0] qspi_axi_awaddr;
-   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_awid;
-   logic [7:0]                      qspi_axi_awlen;
-   logic [2:0]                      qspi_axi_awsize;
-   logic [1:0]                      qspi_axi_awburst;
-   logic [2:0]                      qspi_axi_awprot;
-   logic                            qspi_axi_wvalid;
-   logic                            qspi_axi_wready;
-   logic [XbarCfg.AxiDataWidth-1:0] qspi_axi_wdata;
-   logic [XbarCfg.AxiDataWidth/8-1:0] qspi_axi_wstrb;
-   logic                            qspi_axi_wlast;
-   logic                            qspi_axi_bvalid;
-   logic                            qspi_axi_bready;
-   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_bid;
-   logic [1:0]                      qspi_axi_bresp;
-   logic                            qspi_axi_arvalid;
-   logic                            qspi_axi_arready;
-   logic [XbarCfg.AxiAddrWidth-1:0] qspi_axi_araddr;
-   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_arid;
-   logic [7:0]                      qspi_axi_arlen;
-   logic [2:0]                      qspi_axi_arsize;
-   logic [1:0]                      qspi_axi_arburst;
-   logic [2:0]                      qspi_axi_arprot;
-   logic                            qspi_axi_rvalid;
-   logic                            qspi_axi_rready;
-   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_rid;
-   logic [XbarCfg.AxiDataWidth-1:0] qspi_axi_rdata;
-   logic [1:0]                      qspi_axi_rresp;
-   logic                            qspi_axi_rlast;
-
-   assign qspi_axi_awvalid = xbar_mst_ports_req[MASTER_QSPI_IDX].aw_valid;
-   assign qspi_axi_awaddr  = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.addr;
-   assign qspi_axi_awid    = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.id;
-   assign qspi_axi_awlen   = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.len;
-   assign qspi_axi_awsize  = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.size;
-   assign qspi_axi_awburst = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.burst;
-   assign qspi_axi_awprot  = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.prot;
-   assign qspi_axi_wvalid  = xbar_mst_ports_req[MASTER_QSPI_IDX].w_valid;
-   assign qspi_axi_wdata   = xbar_mst_ports_req[MASTER_QSPI_IDX].w.data;
-   assign qspi_axi_wstrb   = xbar_mst_ports_req[MASTER_QSPI_IDX].w.strb;
-   assign qspi_axi_wlast   = xbar_mst_ports_req[MASTER_QSPI_IDX].w.last;
-   assign qspi_axi_arvalid = xbar_mst_ports_req[MASTER_QSPI_IDX].ar_valid;
-   assign qspi_axi_araddr  = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.addr;
-   assign qspi_axi_arid    = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.id;
-   assign qspi_axi_arlen   = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.len;
-   assign qspi_axi_arsize  = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.size;
-   assign qspi_axi_arburst = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.burst;
-   assign qspi_axi_arprot  = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.prot;
-   assign qspi_axi_bready  = xbar_mst_ports_req[MASTER_QSPI_IDX].b_ready;
-   assign qspi_axi_rready  = xbar_mst_ports_req[MASTER_QSPI_IDX].r_ready;
-
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].aw_ready = qspi_axi_awready;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].w_ready  = qspi_axi_wready;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].ar_ready = qspi_axi_arready;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].b_valid  = qspi_axi_bvalid;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].b.id     = qspi_axi_bid;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].b.resp   = qspi_axi_bresp;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r_valid  = qspi_axi_rvalid;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.id     = qspi_axi_rid;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.data   = qspi_axi_rdata;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.resp   = qspi_axi_rresp;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.last   = qspi_axi_rlast;
-
    qspi_controller_axi #(
        .AXI_ID_WIDTH(AXI_ID_WIDTH_XBAR_MST),
        .AXI_ADDR_WIDTH(XbarCfg.AxiAddrWidth),
@@ -1362,7 +1526,7 @@ module secure_soc (
 
    ram32 #(
       .SIZE     ('h40000/4),
-      .INIT_FILE(`RAM_FPATH), //("/home/shc/projects/riscv-linux-boot/opensbi/build/platform/template/firmware/fw_dynamic.hex"),
+      .INIT_FILE(`RAM_FPATH), 
       .USE_BOOTROM(0)
    ) main_memory8 (
       .clk_i   (clkwiz_o),
@@ -1414,10 +1578,8 @@ module secure_soc (
    logic [XbarCfg.AxiDataWidth-1:0] ddr3_rdata_decrypted;
 
    `ifdef SECURE_LAYER2
-   // On-The-Fly Encryption/Decryption
    localparam DDR3_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
 
-   // Write Path Address Management for CTR
    logic                               w_addr_fifo_push;
    logic                               w_addr_fifo_pop;
    logic [XbarCfg.AxiAddrWidth-1:0]    w_addr_fifo_data_i;
@@ -1429,10 +1591,8 @@ module secure_soc (
 
    assign w_addr_fifo_push = xbar_mst_ports_req[MASTER_DRAM_IDX].aw_valid && dram_axi_awready;
    assign w_addr_fifo_data_i = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr;
-   // Pop address from FIFO only on the first beat of a transaction.
    assign w_addr_fifo_pop = xbar_mst_ports_req[MASTER_DRAM_IDX].w_valid && dram_axi_wready && !write_burst_active;
 
-   // Track if a write burst is in progress
    always_ff @(posedge clkwiz_o or negedge rst_n) begin
        if (~rst_n) begin
            write_burst_active <= 1'b0;
@@ -1441,13 +1601,11 @@ module secure_soc (
        end
    end
 
-   // Increment address for each beat of the burst
    always_ff @(posedge clkwiz_o or negedge rst_n) begin
        if (~rst_n) begin
            write_addr_for_enc <= '0;
-       end else if (w_addr_fifo_pop) begin // Load base address for the first beat
+       end else if (w_addr_fifo_pop) begin 
            write_addr_for_enc <= w_addr_fifo_data_o;
-       // For subsequent beats, increment the address
        end else if (xbar_mst_ports_req[MASTER_DRAM_IDX].w_valid && dram_axi_wready && write_burst_active) begin
            write_addr_for_enc <= write_addr_for_enc + (XbarCfg.AxiDataWidth / 8);
        end
@@ -1476,7 +1634,6 @@ module secure_soc (
        .data_out(ddr3_wdata_encrypted)
    );
 
-   // Read Path Address Management for CTR
    logic                               r_addr_fifo_push;
    logic                               r_addr_fifo_pop;
    logic [XbarCfg.AxiAddrWidth-1:0]    r_addr_fifo_data_i;
@@ -1488,10 +1645,8 @@ module secure_soc (
 
    assign r_addr_fifo_push = xbar_mst_ports_req[MASTER_DRAM_IDX].ar_valid && dram_axi_arready;
    assign r_addr_fifo_data_i = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.addr;
-   // Pop address from FIFO only on the first beat of a transaction.
    assign r_addr_fifo_pop = dram_axi_rvalid && dram_axi_rready && !read_burst_active;
 
-   // Track if a read burst is in progress
    always_ff @(posedge clkwiz_o or negedge rst_n) begin
        if (~rst_n) begin
            read_burst_active <= 1'b0;
@@ -1500,13 +1655,11 @@ module secure_soc (
        end
    end
 
-   // Increment address for each beat of the burst
    always_ff @(posedge clkwiz_o or negedge rst_n) begin
        if (~rst_n) begin
            read_addr_for_dec <= '0;
-       end else if (r_addr_fifo_pop) begin // Load base address for the first beat
+       end else if (r_addr_fifo_pop) begin 
            read_addr_for_dec <= r_addr_fifo_data_o;
-       // For subsequent beats, increment the address
        end else if (dram_axi_rvalid && dram_axi_rready && read_burst_active) begin
            read_addr_for_dec <= read_addr_for_dec + (XbarCfg.AxiDataWidth / 8);
        end
@@ -1705,8 +1858,7 @@ module secure_soc (
    `endif
 
 `else // END of CORE_CVA6
-// CORE_CV32E40P or CORE_IBEX
-logic               mem_req;
+   logic               mem_req;
    logic [       31:0] mem_addr;
    logic               mem_we;
    logic [        3:0] mem_be;
@@ -1714,14 +1866,12 @@ logic               mem_req;
    logic               mem_rvalid;
    logic [       31:0] mem_rdata;
 
-   // Instruction fetch interface
    logic               instr_req;
    logic [       31:0] instr_addr;
    logic               instr_gnt;
    logic               instr_rvalid;
    logic [       31:0] instr_rdata;
 
-   // Data arbiter for main core
    logic                data_req;
    logic [       31:0]  data_addr;
    logic                data_we;
@@ -1778,14 +1928,12 @@ logic               mem_req;
    logic [`MEM_W  -1:0] dram_rdata;
    `endif
 
-   // instruction cache
    logic               imem_req;
    logic               imem_gnt;
    logic [       31:0] imem_addr;
    logic               imem_rvalid;
    logic [ `MEM_W-1:0] imem_rdata;
 
-   // data cache
    logic                dmem_req;
    logic                dmem_gnt;
    logic [       31:0]  dmem_addr;
@@ -1797,6 +1945,12 @@ logic               mem_req;
    logic [`MEM_W  -1:0] dmem_rdata;
 
    `ifdef SECOND_SRAM
+      `define ENABLE_SECOND_PORT
+   `elsif ASIC
+      `define ENABLE_SECOND_PORT
+   `endif
+
+   `ifdef ENABLE_SECOND_PORT
    logic                mem_req2000;
    logic [       31:0] mem_addr2000;
    logic                mem_we2000;
@@ -1822,24 +1976,21 @@ logic               mem_req;
        .clk_i                    (clkwiz_o),
        .rst_ni                   (rst_n),
 
-       .pulp_clock_en_i          (`PULP_CLOCK_EN), // PULP clock enable (only used if COREV_CLUSTER = 1)
-       .scan_cg_en_i             (`SCAN_CG_EN), // Enable all clock gates for testing
+       .pulp_clock_en_i          (`PULP_CLOCK_EN), 
+       .scan_cg_en_i             (`SCAN_CG_EN), 
 
-       // Configuration
        .boot_addr_i              (`BOOT_ADDR),
        .mtvec_addr_i             (`MTVEC_ADDR),
        .dm_halt_addr_i           (`DM_HALT_ADDR),
        .hart_id_i                (`HART_ID),
        .dm_exception_addr_i      (`DM_EXCEPTION_ADDR),
 
-       // Instruction memory interface
        .instr_req_o              (instr_req),
        .instr_gnt_i              (instr_gnt),
        .instr_rvalid_i           (instr_rvalid),
        .instr_addr_o             (instr_addr),
        .instr_rdata_i            (instr_rdata),
 
-       // Data memory interface
        .data_req_o               (data_req),
        .data_gnt_i               (data_gnt),
        .data_rvalid_i            (data_rvalid),
@@ -1849,64 +2000,30 @@ logic               mem_req;
        .data_wdata_o             (data_wdata),
        .data_rdata_i             (data_rdata),
 
-       // TODO: Interrupt instead of polling peripherals
-       // Interrupt interface
-       .irq_i                    (32'h0), //({14'b0, timer_bus.irq, gpio_bus.irq, 16'b0}), //4'b0, 0, 3'b0, 0, 3'b0, 0, 3'b0}),
+       .irq_i                    (32'h0), 
        .irq_ack_o                (),
        .irq_id_o                 (),
 
-       // TODO: JTAG Integration
-       // Debug interface
        .debug_req_i              (1'b0),
        .debug_havereset_o        (),
        .debug_running_o          (),
        .debug_halted_o           (),
 
-       // CPU Control Signals
        .fetch_enable_i           (1'b1),
        .core_sleep_o             ()
    );
    `elsif CORE_IBEX
    ibex_top #(
-       //.PMPEnable                    (PMPEnable),
-       //.PMPGranularity               (PMPGranularity),
-       //.PMPNumRegions                (PMPNumRegions),
-       //.MHPMCounterNum               (NUM_MHPMCOUNTERS),
-       //.MHPMCounterWidth             (MHPMCounterWidth),
-       //.PMPRstCfg                    (PMPRstCfg),
-       //.PMPRstAddr                   (PMPRstAddr),
-       //.PMPRstMsecCfg                (PMPRstMsecCfg),
-       //.RV32E                        (RV32E),
-       //.RV32M                        (RV32M),
-       //.RV32B                        (RV32B),
-       //.RegFile                      (RegFile),
-       //.BranchTargetALU              (BranchTargetALU),
-       //.WritebackStage               (WritebackStage),
-       //.ICache                       (ICache),
-       //.ICacheECC                    (ICacheECC),
-       //.BranchPredictor              (BranchPredictor),
-       //.DbgTriggerEn                 (DbgTriggerEn),
-       //.DbgHwBreakNum                (DbgHwBreakNum),
-       //.SecureIbex                   (SecureIbex),
-       //.ICacheScramble               (ICacheScramble),
-       //.ICacheScrNumPrinceRoundsHalf (ICacheScrNumPrinceRoundsHalf),
-       //.RndCnstLfsrSeed              (RndCnstLfsrSeed),
-       //.RndCnstLfsrPerm              (RndCnstLfsrPerm),
        .DmBaseAddr                   (0),
-       //.DmAddrMask                   (DmAddrMask),
        .DmHaltAddr                   (`DM_HALT_ADDR),
        .DmExceptionAddr              (`DM_EXCEPTION_ADDR)
-       //,.RndCnstIbexKey               (RndCnstIbexKey),
-       //.RndCnstIbexNonce             (RndCnstIbexNonce),
-       //.CsrMvendorId                 (CsrMvendorId),
-       //.CsrMimpId                    (CsrMimpId)
    ) ibex_core_ip (
        .clk_i                        (clkwiz_o),
        .rst_ni                       (rst_n),
        .test_en_i                    (`SCAN_CG_EN),
        .ram_cfg_i                    (prim_ram_1p_pkg::ram_1p_cfg_t'('0)),
        .hart_id_i                    (`HART_ID),
-       .boot_addr_i                  (`BOOT_ADDR - 'h80), // ibex always assume there is a vector table until 0x80
+       .boot_addr_i                  (`BOOT_ADDR - 'h80), 
        .instr_req_o                  (instr_req),
        .instr_gnt_i                  (instr_gnt),
        .instr_rvalid_i               (instr_rvalid),
@@ -2022,16 +2139,14 @@ logic               mem_req;
          assign dmem_be      = cache_be;
          assign dmem_addr    = cache_addr;
          assign dmem_wdata   = cache_wdata;
-         assign cache_gnt    = 1'b1; //dmem_gnt;
+         assign cache_gnt    = 1'b1; 
          assign cache_rvalid = dmem_rvalid | dmem_wvalid;
          assign cache_rdata  = dmem_rdata;
       end
    endgenerate
 
-   ///////////////////////////////////////////////////////////////////////////
-   // MEMORY ARBITER
    generate
-   `ifdef SECOND_SRAM
+   `ifdef ENABLE_SECOND_PORT
       logic mem_rvalid_combined;
       logic [`MEM_W-1:0] mem_rdata_combined;
       logic [31:0] combined_mem_addr;
@@ -2215,9 +2330,7 @@ logic               mem_req;
       ,.prog_mode_led_o(prog_mode_led_o)
    );
 
-   `ifdef SECOND_SRAM
-   // On-The-Fly Encryption/Decryption
-   // hold address for one cycle to meet timing of sram for decryption
+   `ifdef ENABLE_SECOND_PORT
    reg [31:0] addr_holder;
    always_ff @(posedge clkwiz_o or negedge rst_n) begin
       if (~rst_n) begin
@@ -2340,7 +2453,7 @@ logic               mem_req;
       .gnt_o   (uart_gnt),
       .rvalid_o(uart_rvalid),
       .rdata_o (uart_rdata),
-      .rx_i    (uart_rx_i),
+      .rx_i    (program_rx_i),
       .tx_o    (uart_tx_o)
    );
 
@@ -2364,29 +2477,24 @@ logic               mem_req;
    wire [3:0] qspi_data_io;
 
    s25fl128s #(
-      //.mem_file_name("../../../tests/demo/demo.vmem"),
       .mem_file_name("../../../tests/demo/demo_secure.vmem"),
-      //.mem_file_name("../../../rtl/sim/s25fl128s.mem"),
-      //.mem_file_name("none"),
       .otp_file_name("none"),
-      .AddrRANGE(24'h00FFFF)
-      
-      //,.TimingModel   ( "S25FS128SAGMFI000_F_30pF" )
-      ,.TimingModel   ( "S25FL128SAGMFI000_F_30pF" )
-      ,.UserPreload   (1)
+      .AddrRANGE(24'h00FFFF),
+      .TimingModel   ( "S25FL128SAGMFI000_F_30pF" ),
+      .UserPreload   (1)
    ) flash (
-      // Data Inputs/Outputs
       .SI(qspi_data_io[0]),
       .SO(qspi_data_io[1]),
-      // Controls
       .SCK(qspi_sck_o),
       .CSNeg(qspi_cs_n_o),
-      //.RSTNeg(1),
       .WPNeg(qspi_data_io[2]),
       .HOLDNeg(qspi_data_io[3])
    );
    `endif
 
+   `ifdef ASIC
+      // ASIC QSPI logic is handled inside ASIC specific block above to allow instantiation
+   `else
    wire [3:0] qspi_data_i;
    wire [3:0] qspi_data_o;
    wire [1:0] qspi_out_mod_o;
@@ -2474,6 +2582,7 @@ logic               mem_req;
       .qspi_sck_o    (qspi_sck_o)
    );
    `endif
+   `endif
 
    `ifdef DRAM_SIM
    wire ddr3_reset_n;
@@ -2491,9 +2600,6 @@ logic               mem_req;
    wire [1:0] ddr3_dqs_p;
    wire [1:0] ddr3_dqs_n;
    wire [15:0] ddr3_dq;
-
-   //`define den1024Mb
-   //`include "1024Mb_ddr3_parameters.vh"
 
    ddr3 ddr3_dut (
       .rst_n  (ddr3_reset_n),
@@ -2550,6 +2656,6 @@ logic               mem_req;
       ,.clk_ddr_dqs(clk_ddr_dqs)
    );
    `endif
-`endif // END of CORE_CV32E40P or CORE_IBEX
+`endif 
 
 endmodule

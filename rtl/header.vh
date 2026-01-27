@@ -106,6 +106,7 @@ PERIPHERALS
 
 //`define DDR_100MHZ
 
+`define ASIC
 //`define ZC706
 //`define DDR3_AXI
 `define DDR_MHZ 50
