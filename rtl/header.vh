@@ -87,7 +87,7 @@ PERIPHERALS
 //`define CORE_CV32E40P
 //`define CORE_IBEX
 
-//`define SECOND_SRAM
+`define SECOND_SRAM
 
 // boot memory
 `define MEM_BASE_ADDR   32'h0000_0000
@@ -106,14 +106,14 @@ PERIPHERALS
 
 //`define DDR_100MHZ
 
-`define ZC706
+//`define ZC706
 //`define DDR3_AXI
 `define DDR_MHZ 50
 `define DDR_WRITE_LATENCY 4
 `define DDR_READ_LATENCY 3
 //`define DRAM_SIM
-//`define USE_SRAM
-//`define QSPI_SIM
+`define USE_SRAM
+`define QSPI_SIM
 `else
 //`define BASYS3
 //`define EXT_FLASH
