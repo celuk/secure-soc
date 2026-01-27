@@ -117,6 +117,10 @@ show:
 gen_dramw: rmtemp
 	python3 ./tools/generate_simple_dram_writes.py -f $(ARGS)
 
+.PHONY: get_synth_list
+get_synth_list:
+	$(XILINX_VIVADO)/bin/vivado -mode batch -nolog -nojournal -source vivado/get_synth_list.tcl -tclargs soc_list.f
+
 .PHONY: clean
 clean:
 	-rm -rf ./build

@@ -113,7 +113,7 @@ PERIPHERALS
 `define DDR_READ_LATENCY 3
 //`define DRAM_SIM
 `define USE_SRAM
-`define QSPI_SIM
+//`define QSPI_SIM
 `else
 //`define BASYS3
 //`define EXT_FLASH
