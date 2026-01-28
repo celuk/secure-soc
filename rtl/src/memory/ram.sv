@@ -49,6 +49,7 @@ module ram32 #(
    //(* ram_style = "block" *) // Optional directive to force BRAM
    reg [(NB_COL*COL_WIDTH)-1:0] ram [RAM_DEPTH];
    
+   `ifndef ASIC
    // RAM initialization
    generate
    if (INIT_FILE != "") begin: use_init_file
@@ -61,6 +62,7 @@ module ram32 #(
          ram[ram_index] = {(NB_COL*COL_WIDTH){1'b0}};
    end
    endgenerate
+   `endif
    
    // RAM write address selection 
    wire [ADDR_W-1:0] write_addr;
@@ -418,6 +420,7 @@ module ram32 #(
       .reg_dat_do  (prog_uart_do)
    );
 
+   `ifndef ASIC
    // Initial values
    initial begin
       boot_rom_addr = 0;
@@ -436,5 +439,6 @@ module ram32 #(
       prog_inst_valid = 1'b0;
       prog_sys_rst_n = 1'b1;
    end
+   `endif
 
 endmodule

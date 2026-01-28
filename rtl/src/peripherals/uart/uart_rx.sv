@@ -89,6 +89,18 @@ module uart_rx (
                start_r <= 1'b0;
                queue[write_ptr] <= 0;
             end
+            case (state)
+               DATA_0: queue[write_ptr][0] <= rx_i;
+               DATA_1: queue[write_ptr][1] <= rx_i;
+               DATA_2: queue[write_ptr][2] <= rx_i;
+               DATA_3: queue[write_ptr][3] <= rx_i;
+               DATA_4: queue[write_ptr][4] <= rx_i;
+               DATA_5: queue[write_ptr][5] <= rx_i;
+               DATA_6: queue[write_ptr][6] <= rx_i;
+               DATA_7: queue[write_ptr][7] <= rx_i;
+               default: begin
+               end
+            endcase
          end
          if (counter == baud_div_i) begin
             counter        <= (next == STOP_BIT_ONE_AND_HALF) ? (baud_div_i / 2) : 0;
@@ -133,21 +145,5 @@ module uart_rx (
          STOP_BIT_TWO_OF_TWO:   next = IDLE;
          default:  next = IDLE;
       endcase
-   end
-   always @(posedge clk_i) begin
-      if (uart_clk_pulse) begin
-         case (state)
-            DATA_0: queue[write_ptr][0] <= rx_i;
-            DATA_1: queue[write_ptr][1] <= rx_i;
-            DATA_2: queue[write_ptr][2] <= rx_i;
-            DATA_3: queue[write_ptr][3] <= rx_i;
-            DATA_4: queue[write_ptr][4] <= rx_i;
-            DATA_5: queue[write_ptr][5] <= rx_i;
-            DATA_6: queue[write_ptr][6] <= rx_i;
-            DATA_7: queue[write_ptr][7] <= rx_i;
-            default: begin
-            end
-         endcase
-      end
    end
 endmodule

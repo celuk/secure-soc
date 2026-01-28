@@ -53,6 +53,7 @@ module ram32_dwr #(
    
    reg [(NB_COL*COL_WIDTH)-1:0] ram [RAM_DEPTH];
    
+   `ifndef ASIC
    generate
    if (INIT_FILE != "") begin: use_init_file
      initial
@@ -64,6 +65,7 @@ module ram32_dwr #(
          ram[ram_index] = {(NB_COL*COL_WIDTH){1'b0}};
    end
    endgenerate
+   `endif
    
    wire [ADDR_W-1:0] write_addr;
    wire [(NB_COL*COL_WIDTH)-1:0] write_data;
@@ -495,6 +497,7 @@ module ram32_dwr #(
       .reg_dat_do  (prog_uart_do)
    );
 
+   `ifndef ASIC
    initial begin
       boot_rom_addr = 0;
       boot_in_progress = `USE_BOOTROM && (INIT_FILE == "");
@@ -518,5 +521,6 @@ module ram32_dwr #(
       dram_prog_inst_valid = 1'b0;
       dram_prog_sys_rst_n  = 1'b1;
    end
+   `endif
 
 endmodule

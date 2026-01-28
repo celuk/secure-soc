@@ -791,6 +791,9 @@ module secure_soc (
    logic [AdapterObiCfg.DataWidth-1:0] sram_wdata_encrypted;
    logic [AdapterObiCfg.DataWidth-1:0] sram_rdata_decrypted;
 
+   adapter_obi_req_t mem8_obi_req;
+   adapter_obi_rsp_t mem8_obi_rsp;
+
    `ifdef SECURE_LAYER2
    reg [AdapterObiCfg.AddrWidth-1:0] sram_addr_holder;
    always_ff @(posedge clkwiz_o or negedge rst_n) begin
@@ -819,9 +822,6 @@ module secure_soc (
    assign sram_wdata_encrypted = mem8_obi_req.a.wdata;
    assign sram_rdata_decrypted = ram8_rdata_o;
    `endif
-
-   adapter_obi_req_t mem8_obi_req;
-   adapter_obi_rsp_t mem8_obi_rsp;
 
    axi_to_obi #(
       .ObiCfg         ( AdapterObiCfg          ),

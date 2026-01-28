@@ -189,7 +189,7 @@ module qspi_controller (
          data_out <= 0;
       end
       else begin
-         data_out[3:0] = data_out_enable==4'b1111 ? buffer[`MAX_BIT-1:`MAX_BIT-4]          :
+         data_out[3:0] <= data_out_enable==4'b1111 ? buffer[`MAX_BIT-1:`MAX_BIT-4]          :
                          data_out_enable==4'b0011 ? {2'b00, buffer[`MAX_BIT-1:`MAX_BIT-2]} :
                          data_out_enable==4'b0001 ? {3'b000, buffer[`MAX_BIT-1]}           : 4'b0000;
       end

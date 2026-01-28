@@ -46,6 +46,7 @@
 	reg [31:0] send_divcnt;
 	reg send_dummy;
 
+	`ifndef ASIC
 	// assign initial values to FPGA work without need of switching
 	initial begin
 		cfg_divider = DEFAULT_DIV;
@@ -59,6 +60,7 @@
 		send_divcnt = 0;
 		send_dummy = 1;
 	end
+	`endif
 
 	assign reg_div_do = cfg_divider;
 
@@ -119,15 +121,15 @@
 	assign ser_tx = send_pattern[0];
 
 	always @(posedge clk or negedge resetn) begin
-		if (reg_div_we != 0)
-			send_dummy <= 1;
-		send_divcnt <= send_divcnt + 1;
 		if (!resetn) begin
 			send_pattern <= ~0;
 			send_bitcnt <= 0;
 			send_divcnt <= 0;
 			send_dummy <= 1;
 		end else begin
+			if (reg_div_we != 0)
+				send_dummy <= 1;
+			send_divcnt <= send_divcnt + 1;
 			if (send_dummy && (send_bitcnt == 0)) begin
 				send_pattern <= ~0;
 				send_bitcnt <= 15;
