@@ -65,14 +65,14 @@ package cva6_config_pkg;
       PMPNapotEn: bit'(1),
       NOCType: config_pkg::NOC_TYPE_AXI4_ATOP,
       NrNonIdempotentRules: unsigned'(1),
-      NonIdempotentAddrBase: 1024'({64'hFF00_0000}),
-      NonIdempotentLength: 1024'({64'h0100_0000}),
+      NonIdempotentAddrBase: 1024'({64'hFC00_0000}),
+      NonIdempotentLength: 1024'({64'h0400_0000}),
       NrExecuteRegionRules: unsigned'(0),
       ExecuteRegionAddrBase: 1024'({64'h0000_0000}),
-      ExecuteRegionLength: 1024'({64'hFEFF_FFFF}),
+      ExecuteRegionLength: 1024'({64'hFBFF_FFFF}),
       NrCachedRegionRules: unsigned'(1),
       CachedRegionAddrBase: 1024'({64'h0000_0000}),
-      CachedRegionLength: 1024'({64'hFEFF_FFFF}), // FEFFFFFF = FF000000 - 1
+      CachedRegionLength: 1024'({64'hFBFF_FFFF}), // FEFFFFFF = FF000000 - 1
       MaxOutstandingStores: unsigned'(0),
       DebugEn: bit'(1),
       AxiBurstWriteEn: bit'(0),

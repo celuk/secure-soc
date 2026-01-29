@@ -5,16 +5,12 @@
 
 `default_nettype none
 
-`ifdef CORE_CVA6
 `include "obi/typedef.svh"
 `include "axi/typedef.svh"
 `include "register_interface/typedef.svh"
-`endif
 
 module secure_soc (
-   `ifdef ASIC
-   input  wire clk_i,
-   `elsif ZC706
+   `ifdef ZC706
    input  wire clk_p,
    input  wire clk_n,
    `elsif DDR3_AXI
@@ -32,24 +28,21 @@ module secure_soc (
    output wire uart_tx_o
 
    `ifndef ZC706
-   //`ifndef USE_SRAM
+   `ifndef USE_SRAM
    `ifndef DDR3_AXI
    `ifndef QSPI_SIM
    ,output wire qspi_cs_n_o
    `ifdef EXT_FLASH
    ,output wire qspi_sck_o
-   `elsif ASIC
-   ,output wire qspi_sck_o
    `endif
    ,inout wire [3:0] qspi_data_io
    `endif
-   //`endif
+   `endif
    `endif
    `endif
 
    `ifndef DRAM_SIM
-   `ifdef ASIC
-   `elsif ZC706
+   `ifdef ZC706
    ,output wire ddr3_reset_n
    ,output wire ddr3_cke
    ,output wire ddr3_ck_p
@@ -87,8 +80,6 @@ module secure_soc (
    `endif
 );
 
-   //wire uart_rx_i;
-
    logic system_reset_o;
    logic uart_dram_write_rst;
    logic uart_dram_mode;
@@ -102,9 +93,6 @@ module secure_soc (
          .locked(clkwiz_locked)
       );
       wire rst_n = rst_ni & system_reset_o & clkwiz_locked;
-   `elsif ASIC
-      wire clkwiz_o = clk_i;
-      wire rst_n = rst_ni & system_reset_o;
    `elsif ZC706
       wire pll_locked;
       wire clk100;
@@ -118,6 +106,7 @@ module secure_soc (
          .clk_in1_n(clk_n)
 
          ,.reset(~rst_ni)
+
          ,.clk_out1(clk100)      
          ,.clk_out2(clk_ddr)     
          ,.clk_out3(clk_ref)     
@@ -141,6 +130,7 @@ module secure_soc (
          .clk_in1_n(clk_n)
 
          ,.reset(~rst_ni)
+
          ,.clk_out1(clk100)      
          ,.clk_out2(clk_ddr)     
          ,.clk_out3(clk_ref)     
@@ -156,7 +146,6 @@ module secure_soc (
       wire rst_n = rst_ni & system_reset_o;
    `endif
 
-`ifdef CORE_CVA6
    localparam config_pkg::cva6_cfg_t CVA6Cfg = build_config_pkg::build_config(cva6_config_pkg::cva6_cfg);
 
    ariane_axi::req_t  cva6_axi_req;
@@ -164,6 +153,8 @@ module secure_soc (
 
    logic [1:0] timer_irq;
    logic [1:0] ipi;
+   logic plic_irq;
+   logic uart_irq;
 
    cva6 #(
       .CVA6Cfg ( CVA6Cfg )
@@ -179,9 +170,9 @@ module secure_soc (
       .rst_ni               ( rst_n                        ),
       .boot_addr_i          ( `BOOT_ADDR                   ),
       .hart_id_i            ( `HART_ID                     ),
-      .irq_i                ( '0                           ),
-      .ipi_i                ( ipi[0]                         ),
-      .time_irq_i           ( timer_irq[0]                         ),
+      .irq_i                ( plic_irq                     ),
+      .ipi_i                ( ipi[0]                       ),
+      .time_irq_i           ( timer_irq[0]                 ),
       .debug_req_i          ( 1'b0                         ),
       .rvfi_probes_o        (                              ),
       .cvxif_req_o          (                              ),
@@ -191,31 +182,26 @@ module secure_soc (
    );
 
    localparam int unsigned NUM_SLAVES_XBAR = 1; 
-   `ifdef ASIC
-   localparam int unsigned NUM_MASTERS_XBAR = 6;
-   `elsif ZC706
-   localparam int unsigned NUM_MASTERS_XBAR = 5; 
+   `ifdef ZC706
+   localparam int unsigned NUM_MASTERS_XBAR = 6; 
    `elsif USE_SRAM
    localparam int unsigned NUM_MASTERS_XBAR = 6;
    `elsif DDR3_AXI
-   localparam int unsigned NUM_MASTERS_XBAR = 5;
+   localparam int unsigned NUM_MASTERS_XBAR = 6;
    `else
-   localparam int unsigned NUM_MASTERS_XBAR = 4;
+   localparam int unsigned NUM_MASTERS_XBAR = 5;
    `endif
-   localparam int unsigned MASTER_RAM_IDX  = 0;
-   localparam int unsigned MASTER_UART_IDX = 1;
+   localparam int unsigned MASTER_RAM_IDX   = 0;
+   localparam int unsigned MASTER_UART_IDX  = 1;
    localparam int unsigned MASTER_TIMER_IDX = 2;
    localparam int unsigned MASTER_CLINT_IDX = 3;
-   `ifdef ASIC
-   localparam int unsigned MASTER_DRAM_IDX = 4;
-   localparam int unsigned MASTER_QSPI_IDX = 5;
-   `elsif ZC706 
-   localparam int unsigned MASTER_DRAM_IDX = 4;
+   localparam int unsigned MASTER_PLIC_IDX  = 4;
+   `ifdef ZC706 
+   localparam int unsigned MASTER_DRAM_IDX = 5;
    `elsif USE_SRAM
-   localparam int unsigned MASTER_DRAM_IDX = 4;
-   localparam int unsigned MASTER_QSPI_IDX = 5;
+   localparam int unsigned MASTER_DRAM_IDX = 5;
    `elsif DDR3_AXI
-   localparam int unsigned MASTER_DRAM_IDX = 4;
+   localparam int unsigned MASTER_DRAM_IDX = 5;
    `endif
 
    localparam axi_pkg::xbar_cfg_t XbarCfg = '{
@@ -246,15 +232,12 @@ module secure_soc (
       '{ start_addr: `MEM_BASE_ADDR,   end_addr: `MEM_BASE_ADDR  + `MEM_RANGE,   idx: MASTER_RAM_IDX  },
       '{ start_addr: `UART_BASE_ADDR,  end_addr: `UART_BASE_ADDR + `UART_RANGE,  idx: MASTER_UART_IDX },
       '{ start_addr: `TIMER_BASE_ADDR, end_addr: `TIMER_BASE_ADDR+ `TIMER_RANGE, idx: MASTER_TIMER_IDX },
-      '{ start_addr: `CLINT_BASE_ADDR, end_addr: `CLINT_BASE_ADDR + `CLINT_RANGE, idx: MASTER_CLINT_IDX }
-      `ifdef ASIC
-      ,'{ start_addr: `DDR3_AXI_BASE_ADDR, end_addr: `DDR3_AXI_BASE_ADDR+ `DDR3_AXI_RANGE, idx: MASTER_DRAM_IDX }
-      ,'{ start_addr: `QSPI_BASE_ADDR, end_addr: `QSPI_BASE_ADDR+ `QSPI_RANGE, idx: MASTER_QSPI_IDX }
-      `elsif ZC706 
+      '{ start_addr: `CLINT_BASE_ADDR, end_addr: `CLINT_BASE_ADDR + `CLINT_RANGE, idx: MASTER_CLINT_IDX },
+      '{ start_addr: `PLIC_BASE_ADDR,  end_addr: `PLIC_BASE_ADDR + `PLIC_RANGE,  idx: MASTER_PLIC_IDX  }
+      `ifdef ZC706 
       ,'{ start_addr: `DRAM_BASE_ADDR, end_addr: `DRAM_BASE_ADDR+ `DRAM_RANGE, idx: MASTER_DRAM_IDX }
       `elsif USE_SRAM
       ,'{ start_addr: `DDR3_AXI_BASE_ADDR, end_addr: `DDR3_AXI_BASE_ADDR+ `DDR3_AXI_RANGE, idx: MASTER_DRAM_IDX }
-      ,'{ start_addr: `QSPI_BASE_ADDR, end_addr: `QSPI_BASE_ADDR+ `QSPI_RANGE, idx: MASTER_QSPI_IDX }
       `elsif DDR3_AXI
       ,'{ start_addr: `DDR3_AXI_BASE_ADDR, end_addr: `DDR3_AXI_BASE_ADDR+ `DDR3_AXI_RANGE, idx: MASTER_DRAM_IDX }
       `endif
@@ -353,6 +336,43 @@ module secure_soc (
      .timer_irq_o(timer_irq),
      .ipi_o(ipi)
    );
+
+   reg_req_t plic_reg_req;
+   reg_rsp_t plic_reg_rsp;
+
+   axi_to_reg_v2 #(
+     .AxiAddrWidth(XbarCfg.AxiAddrWidth),
+     .AxiDataWidth(XbarCfg.AxiDataWidth),
+     .AxiIdWidth(AXI_ID_WIDTH_XBAR_MST),
+     .RegDataWidth(XbarCfg.AxiDataWidth),
+     .axi_req_t(ariane_axi::req_t),
+     .axi_rsp_t(ariane_axi::resp_t),
+     .reg_req_t(reg_req_t),
+     .reg_rsp_t(reg_rsp_t)
+   ) i_axi_to_reg_plic (
+     .clk_i(clkwiz_o),
+     .rst_ni(rst_n),
+     .axi_req_i(xbar_mst_ports_req[MASTER_PLIC_IDX]),
+     .axi_rsp_o(xbar_mst_ports_resp[MASTER_PLIC_IDX]),
+     .reg_req_o(plic_reg_req),
+     .reg_rsp_i(plic_reg_rsp)
+   );
+
+   plic_top #(
+     .N_SOURCE    (31),
+     .N_TARGET    (1),
+     .MAX_PRIO    (7),
+     .reg_req_t(reg_req_t),
+     .reg_rsp_t(reg_rsp_t)
+   ) i_plic (
+     .clk_i(clkwiz_o),
+     .rst_ni(rst_ni & pll_locked),
+     .req_i(plic_reg_req),
+     .resp_o(plic_reg_rsp),
+     .le_i('0),
+     .irq_sources_i({29'b0, uart_irq, 1'b0}),
+     .eip_targets_o(plic_irq)
+   );
  
    import obi_pkg::*;
    localparam obi_pkg::obi_cfg_t AdapterObiCfg = '{
@@ -435,6 +455,8 @@ module secure_soc (
    assign mem_obi_rsp.r.rid   = mem_obi_req.a.aid;
    assign mem_obi_rsp.r.err  = 1'b0;
 
+   // TODO: Handle atomics with wrapper
+
    logic uart_dram_write_we;
    logic [31:0] uart_dram_write_addr;
    logic [31:0] uart_dram_write_data;
@@ -444,7 +466,7 @@ module secure_soc (
       .INIT_FILE(`RAM_FPATH)
    ) main_memory (
       .clk_i   (clkwiz_o),
-      .rst_ni  (rst_ni `ifdef BASYS3 & clkwiz_locked `endif),
+      .rst_ni  (rst_ni `ifdef BASYS3 & clkwiz_locked `endif), // pll_locked
       .req_i   ( ram_req_i      ),
       .we_i    ( ram_we_i       ),
       .be_i    ( ram_be_i       ),
@@ -516,7 +538,9 @@ module secure_soc (
    assign xbar_mst_ports_resp[MASTER_UART_IDX].r.id     = uart_axi_rid;
    assign xbar_mst_ports_resp[MASTER_UART_IDX].r.data   = uart_axi_rdata;
    assign xbar_mst_ports_resp[MASTER_UART_IDX].r.resp   = uart_axi_rresp;
-   assign xbar_mst_ports_resp[MASTER_UART_IDX].r.last   = 1'b1; 
+   assign xbar_mst_ports_resp[MASTER_UART_IDX].r.last   = 1'b1; // AXI-Lite
+
+   wire uart_rx_i = (!uart_dram_mode) ? program_rx_i : 1'b1;
 
    uart_controller_axi #(
        .AXI_ID_WIDTH  (AXI_ID_WIDTH_XBAR_MST),
@@ -537,7 +561,7 @@ module secure_soc (
        .s_axi_rvalid (uart_axi_rvalid),  .s_axi_rready (uart_axi_rready),
        .s_axi_rid    (uart_axi_rid),     .s_axi_rdata  (uart_axi_rdata),
        .s_axi_rresp  (uart_axi_rresp),
-       .rx_i    ( program_rx_i     ), .tx_o    ( uart_tx_o     )
+       .rx_i    ( uart_rx_i     ), .tx_o    ( uart_tx_o     )
    );
 
    logic                            timer_axi_awvalid;
@@ -659,234 +683,7 @@ module secure_soc (
    );
    `endif
 
-   `ifdef ASIC
-   wire [3:0] qspi_data_i;
-   wire [3:0] qspi_data_o;
-   wire [1:0] qspi_out_mod_o;
-
-   assign qspi_data_io[0] = |qspi_out_mod_o   ? qspi_data_o[0] : 1'bZ;
-   assign qspi_data_io[1] = qspi_out_mod_o[1] ? qspi_data_o[1] : 1'bZ;
-   assign qspi_data_io[2] = &qspi_out_mod_o   ? qspi_data_o[2] : 1'bZ;
-   assign qspi_data_io[3] = &qspi_out_mod_o   ? qspi_data_o[3] : 1'bZ;
-   assign qspi_data_i = qspi_data_io;
-
-   logic                            qspi_axi_awvalid;
-   logic                            qspi_axi_awready;
-   logic [XbarCfg.AxiAddrWidth-1:0] qspi_axi_awaddr;
-   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_awid;
-   logic [7:0]                      qspi_axi_awlen;
-   logic [2:0]                      qspi_axi_awsize;
-   logic [1:0]                      qspi_axi_awburst;
-   logic [2:0]                      qspi_axi_awprot;
-   logic                            qspi_axi_wvalid;
-   logic                            qspi_axi_wready;
-   logic [XbarCfg.AxiDataWidth-1:0] qspi_axi_wdata;
-   logic [XbarCfg.AxiDataWidth/8-1:0] qspi_axi_wstrb;
-   logic                            qspi_axi_wlast;
-   logic                            qspi_axi_bvalid;
-   logic                            qspi_axi_bready;
-   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_bid;
-   logic [1:0]                      qspi_axi_bresp;
-   logic                            qspi_axi_arvalid;
-   logic                            qspi_axi_arready;
-   logic [XbarCfg.AxiAddrWidth-1:0] qspi_axi_araddr;
-   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_arid;
-   logic [7:0]                      qspi_axi_arlen;
-   logic [2:0]                      qspi_axi_arsize;
-   logic [1:0]                      qspi_axi_arburst;
-   logic [2:0]                      qspi_axi_arprot;
-   logic                            qspi_axi_rvalid;
-   logic                            qspi_axi_rready;
-   logic [AXI_ID_WIDTH_XBAR_MST-1:0]qspi_axi_rid;
-   logic [XbarCfg.AxiDataWidth-1:0] qspi_axi_rdata;
-   logic [1:0]                      qspi_axi_rresp;
-   logic                            qspi_axi_rlast;
-
-   assign qspi_axi_awvalid = xbar_mst_ports_req[MASTER_QSPI_IDX].aw_valid;
-   assign qspi_axi_awaddr  = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.addr;
-   assign qspi_axi_awid    = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.id;
-   assign qspi_axi_awlen   = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.len;
-   assign qspi_axi_awsize  = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.size;
-   assign qspi_axi_awburst = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.burst;
-   assign qspi_axi_awprot  = xbar_mst_ports_req[MASTER_QSPI_IDX].aw.prot;
-   assign qspi_axi_wvalid  = xbar_mst_ports_req[MASTER_QSPI_IDX].w_valid;
-   assign qspi_axi_wdata   = xbar_mst_ports_req[MASTER_QSPI_IDX].w.data;
-   assign qspi_axi_wstrb   = xbar_mst_ports_req[MASTER_QSPI_IDX].w.strb;
-   assign qspi_axi_wlast   = xbar_mst_ports_req[MASTER_QSPI_IDX].w.last;
-   assign qspi_axi_arvalid = xbar_mst_ports_req[MASTER_QSPI_IDX].ar_valid;
-   assign qspi_axi_araddr  = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.addr;
-   assign qspi_axi_arid    = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.id;
-   assign qspi_axi_arlen   = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.len;
-   assign qspi_axi_arsize  = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.size;
-   assign qspi_axi_arburst = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.burst;
-   assign qspi_axi_arprot  = xbar_mst_ports_req[MASTER_QSPI_IDX].ar.prot;
-   assign qspi_axi_bready  = xbar_mst_ports_req[MASTER_QSPI_IDX].b_ready;
-   assign qspi_axi_rready  = xbar_mst_ports_req[MASTER_QSPI_IDX].r_ready;
-
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].aw_ready = qspi_axi_awready;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].w_ready  = qspi_axi_wready;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].ar_ready = qspi_axi_arready;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].b_valid  = qspi_axi_bvalid;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].b.id     = qspi_axi_bid;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].b.resp   = qspi_axi_bresp;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r_valid  = qspi_axi_rvalid;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.id     = qspi_axi_rid;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.data   = qspi_axi_rdata;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.resp   = qspi_axi_rresp;
-   assign xbar_mst_ports_resp[MASTER_QSPI_IDX].r.last   = qspi_axi_rlast;
-
-   qspi_controller_axi #(
-       .AXI_ID_WIDTH(AXI_ID_WIDTH_XBAR_MST),
-       .AXI_ADDR_WIDTH(XbarCfg.AxiAddrWidth),
-       .AXI_DATA_WIDTH(XbarCfg.AxiDataWidth)
-   ) qspi_dut (
-       .clk_i(clkwiz_o),
-       .rst_ni(rst_n),
-       .s_axi_awvalid(qspi_axi_awvalid),
-       .s_axi_awready(qspi_axi_awready),
-       .s_axi_awaddr(qspi_axi_awaddr),
-       .s_axi_awid(qspi_axi_awid),
-       .s_axi_awlen(qspi_axi_awlen),
-       .s_axi_awsize(qspi_axi_awsize),
-       .s_axi_awburst(qspi_axi_awburst),
-       .s_axi_awprot(qspi_axi_awprot),
-       .s_axi_wvalid(qspi_axi_wvalid),
-       .s_axi_wready(qspi_axi_wready),
-       .s_axi_wdata(qspi_axi_wdata),
-       .s_axi_wstrb(qspi_axi_wstrb),
-       .s_axi_wlast(qspi_axi_wlast),
-       .s_axi_bvalid(qspi_axi_bvalid),
-       .s_axi_bready(qspi_axi_bready),
-       .s_axi_bid(qspi_axi_bid),
-       .s_axi_bresp(qspi_axi_bresp),
-       .s_axi_arvalid(qspi_axi_arvalid),
-       .s_axi_arready(qspi_axi_arready),
-       .s_axi_araddr(qspi_axi_araddr),
-       .s_axi_arid(qspi_axi_arid),
-       .s_axi_arlen(qspi_axi_arlen),
-       .s_axi_arsize(qspi_axi_arsize),
-       .s_axi_arburst(qspi_axi_arburst),
-       .s_axi_arprot(qspi_axi_arprot),
-       .s_axi_rvalid(qspi_axi_rvalid),
-       .s_axi_rready(qspi_axi_rready),
-       .s_axi_rid(qspi_axi_rid),
-       .s_axi_rdata(qspi_axi_rdata),
-       .s_axi_rresp(qspi_axi_rresp),
-       .s_axi_rlast(qspi_axi_rlast),
-       .qspi_data_i(qspi_data_i),
-       .qspi_data_o(qspi_data_o),
-       .qspi_out_mod_o(qspi_out_mod_o),
-       .qspi_cs_n_o(qspi_cs_n_o),
-       .qspi_sck_o(qspi_sck_o)
-   );
-
-   logic        ram8_req_i;
-   logic        ram8_we_i;
-   logic [AdapterObiCfg.DataWidth/8-1:0] ram8_be_i;
-   logic [AdapterObiCfg.AddrWidth-1:0] ram8_addr_i;
-   logic [AdapterObiCfg.DataWidth-1:0] ram8_wdata_i;
-   logic        ram8_rvalid_o;
-   logic [AdapterObiCfg.DataWidth-1:0] ram8_rdata_o;
-
-   logic [AdapterObiCfg.DataWidth-1:0] sram_wdata_encrypted;
-   logic [AdapterObiCfg.DataWidth-1:0] sram_rdata_decrypted;
-
-   adapter_obi_req_t mem8_obi_req;
-   adapter_obi_rsp_t mem8_obi_rsp;
-
-   `ifdef SECURE_LAYER2
-   reg [AdapterObiCfg.AddrWidth-1:0] sram_addr_holder;
-   always_ff @(posedge clkwiz_o or negedge rst_n) begin
-      if (~rst_n) begin
-         sram_addr_holder <= '0;
-      end
-      else if (mem8_obi_req.req && !mem8_obi_req.a.we) begin
-         sram_addr_holder <= mem8_obi_req.a.addr;
-      end
-   end
-
-   localparam SRAM_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
-
-   ctr_encoder_decoder #(.KEY(SRAM_CTR_KEY)) sram_ctr_enc (
-      .row_number(mem8_obi_req.a.addr),
-      .data_in(mem8_obi_req.a.wdata),
-      .data_out(sram_wdata_encrypted)
-   );
-
-   ctr_encoder_decoder #(.KEY(SRAM_CTR_KEY)) sram_ctr_dec (
-      .row_number(sram_addr_holder),
-      .data_in(ram8_rdata_o),
-      .data_out(sram_rdata_decrypted)
-   );
-   `else
-   assign sram_wdata_encrypted = mem8_obi_req.a.wdata;
-   assign sram_rdata_decrypted = ram8_rdata_o;
-   `endif
-
-   axi_to_obi #(
-      .ObiCfg         ( AdapterObiCfg          ),
-      .obi_req_t      ( adapter_obi_req_t      ),
-      .obi_rsp_t      ( adapter_obi_rsp_t      ),
-      .obi_a_chan_t   ( adapter_obi_a_chan_t   ),
-      .obi_r_chan_t   ( adapter_obi_r_chan_t   ),
-      .AxiAddrWidth   ( XbarCfg.AxiAddrWidth   ),
-      .AxiDataWidth   ( XbarCfg.AxiDataWidth   ),
-      .AxiIdWidth     ( AXI_ID_WIDTH_XBAR_MST  ),
-      .AxiUserWidth   ( cva6_config_pkg::CVA6ConfigDataUserWidth ),
-      .MaxTrans       ( AXI_MAX_TRANS          ),
-      .axi_req_t      ( ariane_axi::req_t      ),
-      .axi_rsp_t      ( ariane_axi::resp_t     )
-   ) i_axi_to_obi_mem8 (
-      .clk_i        ( clkwiz_o                            ),
-      .rst_ni       ( rst_n                               ),
-      .testmode_i   ( 1'b0                                ),
-      .axi_req_i    ( xbar_mst_ports_req[MASTER_DRAM_IDX]  ),
-      .axi_rsp_o    ( xbar_mst_ports_resp[MASTER_DRAM_IDX] ),
-      .obi_req_o    ( mem8_obi_req                         ),
-      .obi_rsp_i    ( mem8_obi_rsp                         ),
-      .req_aw_id_o (), .req_aw_user_o (), .req_w_user_o (),
-      .req_write_aid_i ('0),.req_write_auser_i ('0),.req_write_wuser_i ('0),
-      .req_ar_id_o (), .req_ar_user_o (),
-      .req_read_aid_i ('0),.req_read_auser_i ('0),
-      .rsp_write_aw_user_o (), .rsp_write_w_user_o (), .rsp_write_bank_strb_o (),
-      .rsp_write_rid_o (), .rsp_write_ruser_o (), .rsp_write_last_o (),
-      .rsp_write_hs_o (), .rsp_b_user_i ('0),
-      .rsp_read_ar_user_o (), .rsp_read_size_enable_o (), .rsp_read_rid_o (),
-      .rsp_read_ruser_o (), .rsp_r_user_i ('0)
-   );
-
-   assign ram8_req_i   = mem8_obi_req.req;
-   assign ram8_we_i    = mem8_obi_req.a.we;
-   assign ram8_addr_i  = mem8_obi_req.a.addr[30:0];
-   assign ram8_wdata_i = sram_wdata_encrypted;
-   assign ram8_be_i    = mem8_obi_req.a.be;
-
-   assign mem8_obi_rsp.gnt    = 1;
-   assign mem8_obi_rsp.rvalid = ram8_rvalid_o;
-   assign mem8_obi_rsp.r.rdata = sram_rdata_decrypted;
-   assign mem8_obi_rsp.r.rid   = mem8_obi_req.a.aid;
-   assign mem8_obi_rsp.r.err  = 1'b0;
-
-   ram32 #(
-      .SIZE     ('h40000/4),
-      .INIT_FILE(`RAM_FPATH),
-      .USE_BOOTROM(0)
-   ) main_memory8 (
-      .clk_i   (clkwiz_o),
-      .rst_ni  (rst_n),
-      .req_i   ( ram8_req_i      ),
-      .we_i    ( ram8_we_i       ),
-      .be_i    ( ram8_be_i       ),
-      .addr_i  ( ram8_addr_i     ),
-      .wdata_i ( ram8_wdata_i    ),
-      .rvalid_o( ram8_rvalid_o   ),
-      .rdata_o ( ram8_rdata_o    )
-
-      ,.program_rx_i   (    )
-      ,.system_reset_o (  )
-      ,.prog_mode_led_o( )
-   );
-   `elsif ZC706
+   `ifdef ZC706
    logic                            dram_axi_awvalid;
    logic                            dram_axi_awready;
    logic [XbarCfg.AxiAddrWidth-1:0] dram_axi_awaddr;
@@ -895,8 +692,6 @@ module secure_soc (
    logic [2:0]                      dram_axi_awsize;
    logic [1:0]                      dram_axi_awburst;
    logic [2:0]                      dram_axi_awprot;
-   logic [5:0]                      dram_axi_awatop;
-   logic                            dram_axi_awlock;
    logic                            dram_axi_wvalid;
    logic                            dram_axi_wready;
    logic [XbarCfg.AxiDataWidth-1:0] dram_axi_wdata;
@@ -914,7 +709,6 @@ module secure_soc (
    logic [2:0]                      dram_axi_arsize;
    logic [1:0]                      dram_axi_arburst;
    logic [2:0]                      dram_axi_arprot;
-   logic                            dram_axi_arlock;
    logic                            dram_axi_rvalid;
    logic                            dram_axi_rready;
    logic [AXI_ID_WIDTH_XBAR_MST-1:0]dram_axi_rid;
@@ -967,6 +761,141 @@ module secure_soc (
    logic [1:0]                      atomics_mst_rresp;
    logic                            atomics_mst_rlast;
    logic [0:0]                      atomics_mst_ruser;
+   
+   assign dram_axi_awvalid = xbar_mst_ports_req[MASTER_DRAM_IDX].aw_valid;
+   assign dram_axi_awaddr  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr;
+   assign dram_axi_awid    = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.id;
+   assign dram_axi_awlen   = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.len;
+   assign dram_axi_awsize  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.size;
+   assign dram_axi_awburst = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.burst;
+   assign dram_axi_awprot  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.prot;
+   assign dram_axi_wvalid  = xbar_mst_ports_req[MASTER_DRAM_IDX].w_valid;
+   assign dram_axi_wdata   = xbar_mst_ports_req[MASTER_DRAM_IDX].w.data;
+   assign dram_axi_wstrb   = xbar_mst_ports_req[MASTER_DRAM_IDX].w.strb;
+   assign dram_axi_wlast   = xbar_mst_ports_req[MASTER_DRAM_IDX].w.last;
+   assign dram_axi_arvalid = xbar_mst_ports_req[MASTER_DRAM_IDX].ar_valid;
+   assign dram_axi_araddr  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.addr;
+   assign dram_axi_arid    = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.id;
+   assign dram_axi_arlen   = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.len;
+   assign dram_axi_arsize  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.size;
+   assign dram_axi_arburst = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.burst;
+   assign dram_axi_arprot  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.prot;
+   assign dram_axi_bready  = xbar_mst_ports_req[MASTER_DRAM_IDX].b_ready;
+   assign dram_axi_rready  = xbar_mst_ports_req[MASTER_DRAM_IDX].r_ready;
+
+   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].aw_ready = dram_axi_awready;
+   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].w_ready  = dram_axi_wready;
+   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].ar_ready = dram_axi_arready;
+   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].b_valid  = dram_axi_bvalid;
+   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].b.id     = dram_axi_bid;
+   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].b.resp   = dram_axi_bresp;
+   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r_valid  = dram_axi_rvalid;
+   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.id     = dram_axi_rid;
+   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.data   = dram_axi_rdata;
+   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.resp   = dram_axi_rresp;
+   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.last   = dram_axi_rlast;
+
+   axi_riscv_atomics #(
+       .AXI_ADDR_WIDTH     (XbarCfg.AxiAddrWidth),
+       .AXI_DATA_WIDTH     (XbarCfg.AxiDataWidth),
+       .AXI_ID_WIDTH       (AXI_ID_WIDTH_XBAR_MST),
+       .AXI_USER_WIDTH     (1),
+       .AXI_MAX_WRITE_TXNS (1),
+       .RISCV_WORD_WIDTH   (32)
+   ) i_axi_atomics (
+       .clk_i(clkwiz_o),
+       .rst_ni( (rst_ni & system_reset_o & pll_locked) || uart_dram_mode ),
+       .slv_aw_addr_i   (dram_axi_awaddr),
+       .slv_aw_prot_i   (dram_axi_awprot),
+       .slv_aw_region_i ('0),
+       .slv_aw_atop_i   (xbar_mst_ports_req[MASTER_DRAM_IDX].aw.atop),
+       .slv_aw_len_i    (dram_axi_awlen),
+       .slv_aw_size_i   (dram_axi_awsize),
+       .slv_aw_burst_i  (dram_axi_awburst),
+       .slv_aw_lock_i   (xbar_mst_ports_req[MASTER_DRAM_IDX].aw.lock),
+       .slv_aw_cache_i  ('0),
+       .slv_aw_qos_i    ('0),
+       .slv_aw_id_i     (dram_axi_awid),
+       .slv_aw_user_i   ('0),
+       .slv_aw_ready_o  (dram_axi_awready),
+       .slv_aw_valid_i  (dram_axi_awvalid),
+       .slv_ar_addr_i   (dram_axi_araddr),
+       .slv_ar_prot_i   (dram_axi_arprot),
+       .slv_ar_region_i ('0),
+       .slv_ar_len_i    (dram_axi_arlen),
+       .slv_ar_size_i   (dram_axi_arsize),
+       .slv_ar_burst_i  (dram_axi_arburst),
+       .slv_ar_lock_i   (xbar_mst_ports_req[MASTER_DRAM_IDX].ar.lock),
+       .slv_ar_cache_i  ('0),
+       .slv_ar_qos_i    ('0),
+       .slv_ar_id_i     (dram_axi_arid),
+       .slv_ar_user_i   ('0),
+       .slv_ar_ready_o  (dram_axi_arready),
+       .slv_ar_valid_i  (dram_axi_arvalid),
+       .slv_w_data_i    (dram_axi_wdata),
+       .slv_w_strb_i    (dram_axi_wstrb),
+       .slv_w_user_i    ('0),
+       .slv_w_last_i    (dram_axi_wlast),
+       .slv_w_ready_o   (dram_axi_wready),
+       .slv_w_valid_i   (dram_axi_wvalid),
+       .slv_r_data_o    (dram_axi_rdata),
+       .slv_r_resp_o    (dram_axi_rresp),
+       .slv_r_last_o    (dram_axi_rlast),
+       .slv_r_id_o      (dram_axi_rid),
+       .slv_r_user_o    (),
+       .slv_r_ready_i   (dram_axi_rready),
+       .slv_r_valid_o   (dram_axi_rvalid),
+       .slv_b_resp_o    (dram_axi_bresp),
+       .slv_b_id_o      (dram_axi_bid),
+       .slv_b_user_o    (),
+       .slv_b_ready_i   (dram_axi_bready),
+       .slv_b_valid_o   (dram_axi_bvalid),
+       .mst_aw_addr_o   (atomics_mst_awaddr),
+       .mst_aw_prot_o   (atomics_mst_awprot),
+       .mst_aw_region_o (atomics_mst_awregion),
+       .mst_aw_atop_o   (atomics_mst_awatop),
+       .mst_aw_len_o    (atomics_mst_awlen),
+       .mst_aw_size_o   (atomics_mst_awsize),
+       .mst_aw_burst_o  (atomics_mst_awburst),
+       .mst_aw_lock_o   (atomics_mst_awlock),
+       .mst_aw_cache_o  (atomics_mst_awcache),
+       .mst_aw_qos_o    (atomics_mst_awqos),
+       .mst_aw_id_o     (atomics_mst_awid),
+       .mst_aw_user_o   (atomics_mst_awuser),
+       .mst_aw_ready_i  (atomics_mst_awready),
+       .mst_aw_valid_o  (atomics_mst_awvalid),
+       .mst_ar_addr_o   (atomics_mst_araddr),
+       .mst_ar_prot_o   (atomics_mst_arprot),
+       .mst_ar_region_o (atomics_mst_arregion),
+       .mst_ar_len_o    (atomics_mst_arlen),
+       .mst_ar_size_o   (atomics_mst_arsize),
+       .mst_ar_burst_o  (atomics_mst_arburst),
+       .mst_ar_lock_o   (atomics_mst_arlock),
+       .mst_ar_cache_o  (atomics_mst_arcache),
+       .mst_ar_qos_o    (atomics_mst_arqos),
+       .mst_ar_id_o     (atomics_mst_arid),
+       .mst_ar_user_o   (atomics_mst_aruser),
+       .mst_ar_ready_i  (atomics_mst_arready),
+       .mst_ar_valid_o  (atomics_mst_arvalid),
+       .mst_w_data_o    (atomics_mst_wdata),
+       .mst_w_strb_o    (atomics_mst_wstrb),
+       .mst_w_user_o    (atomics_mst_wuser),
+       .mst_w_last_o    (atomics_mst_wlast),
+       .mst_w_ready_i   (atomics_mst_wready),
+       .mst_w_valid_o   (atomics_mst_wvalid),
+       .mst_r_data_i    (atomics_mst_rdata),
+       .mst_r_resp_i    (atomics_mst_rresp),
+       .mst_r_last_i    (atomics_mst_rlast),
+       .mst_r_id_i      (atomics_mst_rid),
+       .mst_r_user_i    (atomics_mst_ruser),
+       .mst_r_ready_o   (atomics_mst_rready),
+       .mst_r_valid_i   (atomics_mst_rvalid),
+       .mst_b_resp_i    (atomics_mst_bresp),
+       .mst_b_id_i      (atomics_mst_bid),
+       .mst_b_user_i    (atomics_mst_buser),
+       .mst_b_ready_o   (atomics_mst_bready),
+       .mst_b_valid_i   (atomics_mst_bvalid)
+   );
 
    logic                            encrypted_axi_awvalid;
    logic                            encrypted_axi_awready;
@@ -999,144 +928,6 @@ module secure_soc (
    logic [XbarCfg.AxiDataWidth-1:0] encrypted_axi_rdata;
    logic [1:0]                      encrypted_axi_rresp;
    logic                            encrypted_axi_rlast;
-
-   assign dram_axi_awvalid = xbar_mst_ports_req[MASTER_DRAM_IDX].aw_valid;
-   assign dram_axi_awaddr  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.addr;
-   assign dram_axi_awid    = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.id;
-   assign dram_axi_awlen   = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.len;
-   assign dram_axi_awsize  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.size;
-   assign dram_axi_awburst = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.burst;
-   assign dram_axi_awprot  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.prot;
-   assign dram_axi_awatop  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.atop;
-   assign dram_axi_awlock  = xbar_mst_ports_req[MASTER_DRAM_IDX].aw.lock;
-   assign dram_axi_wvalid  = xbar_mst_ports_req[MASTER_DRAM_IDX].w_valid;
-   assign dram_axi_wdata   = xbar_mst_ports_req[MASTER_DRAM_IDX].w.data;
-   assign dram_axi_wstrb   = xbar_mst_ports_req[MASTER_DRAM_IDX].w.strb;
-   assign dram_axi_wlast   = xbar_mst_ports_req[MASTER_DRAM_IDX].w.last;
-   assign dram_axi_arvalid = xbar_mst_ports_req[MASTER_DRAM_IDX].ar_valid;
-   assign dram_axi_araddr  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.addr;
-   assign dram_axi_arid    = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.id;
-   assign dram_axi_arlen   = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.len;
-   assign dram_axi_arsize  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.size;
-   assign dram_axi_arburst = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.burst;
-   assign dram_axi_arprot  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.prot;
-   assign dram_axi_arlock  = xbar_mst_ports_req[MASTER_DRAM_IDX].ar.lock;
-   assign dram_axi_bready  = xbar_mst_ports_req[MASTER_DRAM_IDX].b_ready;
-   assign dram_axi_rready  = xbar_mst_ports_req[MASTER_DRAM_IDX].r_ready;
-
-   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].aw_ready = dram_axi_awready;
-   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].w_ready  = dram_axi_wready;
-   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].ar_ready = dram_axi_arready;
-   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].b_valid  = dram_axi_bvalid;
-   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].b.id     = dram_axi_bid;
-   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].b.resp   = dram_axi_bresp;
-   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r_valid  = dram_axi_rvalid;
-   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.id     = dram_axi_rid;
-   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.data   = dram_axi_rdata;
-   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.resp   = dram_axi_rresp;
-   assign xbar_mst_ports_resp[MASTER_DRAM_IDX].r.last   = dram_axi_rlast;
-
-   axi_riscv_atomics #(
-       .AXI_ADDR_WIDTH     (XbarCfg.AxiAddrWidth),
-       .AXI_DATA_WIDTH     (XbarCfg.AxiDataWidth),
-       .AXI_ID_WIDTH       (AXI_ID_WIDTH_XBAR_MST),
-       .AXI_USER_WIDTH     (1),
-       .AXI_MAX_WRITE_TXNS (1),
-       .RISCV_WORD_WIDTH   (32)
-   ) i_axi_atomics (
-       .clk_i             (clkwiz_o),
-       .rst_ni            ((rst_ni & system_reset_o & pll_locked) || uart_dram_mode),
-       .slv_aw_addr_i     (dram_axi_awaddr),
-       .slv_aw_prot_i     (dram_axi_awprot),
-       .slv_aw_region_i   ('0),
-       .slv_aw_atop_i     ({2'b0, dram_axi_awatop}),
-       .slv_aw_len_i      (dram_axi_awlen),
-       .slv_aw_size_i     (dram_axi_awsize),
-       .slv_aw_burst_i    (dram_axi_awburst),
-       .slv_aw_lock_i     (dram_axi_awlock),
-       .slv_aw_cache_i    ('0),
-       .slv_aw_qos_i      ('0),
-       .slv_aw_id_i       (dram_axi_awid),
-       .slv_aw_user_i     ('0),
-       .slv_aw_ready_o    (dram_axi_awready),
-       .slv_aw_valid_i    (dram_axi_awvalid),
-       .slv_ar_addr_i     (dram_axi_araddr),
-       .slv_ar_prot_i     (dram_axi_arprot),
-       .slv_ar_region_i   ('0),
-       .slv_ar_len_i      (dram_axi_arlen),
-       .slv_ar_size_i     (dram_axi_arsize),
-       .slv_ar_burst_i    (dram_axi_arburst),
-       .slv_ar_lock_i     (dram_axi_arlock),
-       .slv_ar_cache_i    ('0),
-       .slv_ar_qos_i      ('0),
-       .slv_ar_id_i       (dram_axi_arid),
-       .slv_ar_user_i     ('0),
-       .slv_ar_ready_o    (dram_axi_arready),
-       .slv_ar_valid_i    (dram_axi_arvalid),
-       .slv_w_data_i      (dram_axi_wdata),
-       .slv_w_strb_i      (dram_axi_wstrb),
-       .slv_w_user_i      ('0),
-       .slv_w_last_i      (dram_axi_wlast),
-       .slv_w_ready_o     (dram_axi_wready),
-       .slv_w_valid_i     (dram_axi_wvalid),
-       .slv_r_data_o      (dram_axi_rdata),
-       .slv_r_resp_o      (dram_axi_rresp),
-       .slv_r_last_o      (dram_axi_rlast),
-       .slv_r_id_o        (dram_axi_rid),
-       .slv_r_user_o      (),
-       .slv_r_ready_i     (dram_axi_rready),
-       .slv_r_valid_o     (dram_axi_rvalid),
-       .slv_b_resp_o      (dram_axi_bresp),
-       .slv_b_id_o        (dram_axi_bid),
-       .slv_b_user_o      (),
-       .slv_b_ready_i     (dram_axi_bready),
-       .slv_b_valid_o     (dram_axi_bvalid),
-       .mst_aw_addr_o     (atomics_mst_awaddr),
-       .mst_aw_prot_o     (atomics_mst_awprot),
-       .mst_aw_region_o   (atomics_mst_awregion),
-       .mst_aw_atop_o     (atomics_mst_awatop),
-       .mst_aw_len_o      (atomics_mst_awlen),
-       .mst_aw_size_o     (atomics_mst_awsize),
-       .mst_aw_burst_o    (atomics_mst_awburst),
-       .mst_aw_lock_o     (atomics_mst_awlock),
-       .mst_aw_cache_o    (atomics_mst_awcache),
-       .mst_aw_qos_o      (atomics_mst_awqos),
-       .mst_aw_id_o       (atomics_mst_awid),
-       .mst_aw_user_o     (atomics_mst_awuser),
-       .mst_aw_ready_i    (atomics_mst_awready),
-       .mst_aw_valid_o    (atomics_mst_awvalid),
-       .mst_ar_addr_o     (atomics_mst_araddr),
-       .mst_ar_prot_o     (atomics_mst_arprot),
-       .mst_ar_region_o   (atomics_mst_arregion),
-       .mst_ar_len_o      (atomics_mst_arlen),
-       .mst_ar_size_o     (atomics_mst_arsize),
-       .mst_ar_burst_o    (atomics_mst_arburst),
-       .mst_ar_lock_o     (atomics_mst_arlock),
-       .mst_ar_cache_o    (atomics_mst_arcache),
-       .mst_ar_qos_o      (atomics_mst_arqos),
-       .mst_ar_id_o       (atomics_mst_arid),
-       .mst_ar_user_o     (atomics_mst_aruser),
-       .mst_ar_ready_i    (atomics_mst_arready),
-       .mst_ar_valid_o    (atomics_mst_arvalid),
-       .mst_w_data_o      (atomics_mst_wdata),
-       .mst_w_strb_o      (atomics_mst_wstrb),
-       .mst_w_user_o      (atomics_mst_wuser),
-       .mst_w_last_o      (atomics_mst_wlast),
-       .mst_w_ready_i     (atomics_mst_wready),
-       .mst_w_valid_o     (atomics_mst_wvalid),
-       .mst_r_data_i      (atomics_mst_rdata),
-       .mst_r_resp_i      (atomics_mst_rresp),
-       .mst_r_last_i      (atomics_mst_rlast),
-       .mst_r_id_i        (atomics_mst_rid),
-       .mst_r_user_i      (atomics_mst_ruser),
-       .mst_r_ready_o     (atomics_mst_rready),
-       .mst_r_valid_i     (atomics_mst_rvalid),
-       .mst_b_resp_i      (atomics_mst_bresp),
-       .mst_b_id_i        (atomics_mst_bid),
-       .mst_b_user_i      (atomics_mst_buser),
-       .mst_b_ready_o     (atomics_mst_bready),
-       .mst_b_valid_i     (atomics_mst_bvalid)
-   );
 
    logic [XbarCfg.AxiDataWidth-1:0] ddr3_wdata_encrypted;
    logic [XbarCfg.AxiDataWidth-1:0] ddr3_rdata_decrypted;
@@ -1333,122 +1124,13 @@ module secure_soc (
        .uart_dram_write_rst_i  (0)
    );
    `elsif USE_SRAM
-   logic qspi_cs_n_o;
-   logic qspi_sck_o;
-   wire [3:0] qspi_data_io;
-   wire [3:0] qspi_data_i;
-   wire [3:0] qspi_data_o;
-   wire [1:0] qspi_out_mod_o;
-
-   `ifdef QSPI_SIM
-   s25fl128s #(
-      .mem_file_name("../../../tests/demo/demo_secure.vmem"),
-      .otp_file_name("none"),
-      .AddrRANGE(24'h00FFFF),
-      .TimingModel   ( "S25FL128SAGMFI000_F_30pF" ),
-      .UserPreload   (1)
-   ) flash (
-      .SI(qspi_data_io[0]),
-      .SO(qspi_data_io[1]),
-      .SCK(qspi_sck_o),
-      .CSNeg(qspi_cs_n_o),
-      .WPNeg(qspi_data_io[2]),
-      .HOLDNeg(qspi_data_io[3])
-   );
-   `endif
-
-   `ifdef BASYS3
-   IOBUF io_buf0 (.I(qspi_data_o[0]), .O(qspi_data_i[0]), .T(~(|qspi_out_mod_o)), .IO(qspi_data_io[0]));
-   IOBUF io_buf1 (.I(qspi_data_o[1]), .O(qspi_data_i[1]), .T(~qspi_out_mod_o[1]), .IO(qspi_data_io[1]));
-   IOBUF io_buf2 (.I(qspi_data_o[2]), .O(qspi_data_i[2]), .T(~(&qspi_out_mod_o)), .IO(qspi_data_io[2]));
-   IOBUF io_buf3 (.I(qspi_data_o[3]), .O(qspi_data_i[3]), .T(~(&qspi_out_mod_o)), .IO(qspi_data_io[3]));
-
-   `ifndef EXT_FLASH
-   STARTUPE2 #(
-        .PROG_USR("FALSE"),
-        .SIM_CCLK_FREQ(0.0)
-    ) STARTUPE2_inst (
-       .CFGCLK(),
-       .CFGMCLK(),
-       .EOS(),
-       .PREQ(),
-       .CLK(1'b0),
-       .GSR(1'b0),
-       .GTS(1'b0),
-       .KEYCLEARB(1'b0),
-       .PACK(1'b0),
-       .USRCCLKO(qspi_sck_o),
-       .USRCCLKTS(1'b0),
-       .USRDONEO(1'b1),
-       .USRDONETS(1'b1)
-    );
-   `endif
-   `else
-   assign qspi_data_io[0] = |qspi_out_mod_o   ? qspi_data_o[0] : 1'bZ;
-   assign qspi_data_io[1] = qspi_out_mod_o[1] ? qspi_data_o[1] : 1'bZ;
-   assign qspi_data_io[2] = &qspi_out_mod_o   ? qspi_data_o[2] : 1'bZ;
-   assign qspi_data_io[3] = &qspi_out_mod_o   ? qspi_data_o[3] : 1'bZ;
-   assign qspi_data_i = qspi_data_io;
-   `endif
-
-   qspi_controller_axi #(
-       .AXI_ID_WIDTH(AXI_ID_WIDTH_XBAR_MST),
-       .AXI_ADDR_WIDTH(XbarCfg.AxiAddrWidth),
-       .AXI_DATA_WIDTH(XbarCfg.AxiDataWidth)
-   ) qspi_dut (
-       .clk_i(clkwiz_o),
-       .rst_ni(rst_n),
-       .s_axi_awvalid(qspi_axi_awvalid),
-       .s_axi_awready(qspi_axi_awready),
-       .s_axi_awaddr(qspi_axi_awaddr),
-       .s_axi_awid(qspi_axi_awid),
-       .s_axi_awlen(qspi_axi_awlen),
-       .s_axi_awsize(qspi_axi_awsize),
-       .s_axi_awburst(qspi_axi_awburst),
-       .s_axi_awprot(qspi_axi_awprot),
-       .s_axi_wvalid(qspi_axi_wvalid),
-       .s_axi_wready(qspi_axi_wready),
-       .s_axi_wdata(qspi_axi_wdata),
-       .s_axi_wstrb(qspi_axi_wstrb),
-       .s_axi_wlast(qspi_axi_wlast),
-       .s_axi_bvalid(qspi_axi_bvalid),
-       .s_axi_bready(qspi_axi_bready),
-       .s_axi_bid(qspi_axi_bid),
-       .s_axi_bresp(qspi_axi_bresp),
-       .s_axi_arvalid(qspi_axi_arvalid),
-       .s_axi_arready(qspi_axi_arready),
-       .s_axi_araddr(qspi_axi_araddr),
-       .s_axi_arid(qspi_axi_arid),
-       .s_axi_arlen(qspi_axi_arlen),
-       .s_axi_arsize(qspi_axi_arsize),
-       .s_axi_arburst(qspi_axi_arburst),
-       .s_axi_arprot(qspi_axi_arprot),
-       .s_axi_rvalid(qspi_axi_rvalid),
-       .s_axi_rready(qspi_axi_rready),
-       .s_axi_rid(qspi_axi_rid),
-       .s_axi_rdata(qspi_axi_rdata),
-       .s_axi_rresp(qspi_axi_rresp),
-       .s_axi_rlast(qspi_axi_rlast),
-       .qspi_data_i(qspi_data_i),
-       .qspi_data_o(qspi_data_o),
-       .qspi_out_mod_o(qspi_out_mod_o),
-       .qspi_cs_n_o(qspi_cs_n_o),
-       .qspi_sck_o(qspi_sck_o)
-   );
-
-   logic        ram8_req_i;
-   logic        ram8_we_i;
-   logic [AdapterObiCfg.DataWidth/8-1:0] ram8_be_i;
-   logic [AdapterObiCfg.AddrWidth-1:0] ram8_addr_i;
-   logic [AdapterObiCfg.DataWidth-1:0] ram8_wdata_i;
-   logic        ram8_rvalid_o;
-   logic [AdapterObiCfg.DataWidth-1:0] ram8_rdata_o;
+   adapter_obi_req_t mem8_obi_req;
+   adapter_obi_rsp_t mem8_obi_rsp;
 
    logic [AdapterObiCfg.DataWidth-1:0] sram_wdata_encrypted;
    logic [AdapterObiCfg.DataWidth-1:0] sram_rdata_decrypted;
 
    `ifdef SECURE_LAYER2
-   // On-The-Fly Encryption/Decryption
    reg [AdapterObiCfg.AddrWidth-1:0] sram_addr_holder;
    always_ff @(posedge clkwiz_o or negedge rst_n) begin
       if (~rst_n) begin
@@ -1476,9 +1158,6 @@ module secure_soc (
    assign sram_wdata_encrypted = mem8_obi_req.a.wdata;
    assign sram_rdata_decrypted = ram8_rdata_o;
    `endif
-
-   adapter_obi_req_t mem8_obi_req;
-   adapter_obi_rsp_t mem8_obi_rsp;
 
    axi_to_obi #(
       .ObiCfg         ( AdapterObiCfg          ),
@@ -1511,6 +1190,14 @@ module secure_soc (
       .rsp_read_ar_user_o (), .rsp_read_size_enable_o (), .rsp_read_rid_o (),
       .rsp_read_ruser_o (), .rsp_r_user_i ('0)
    );
+
+   logic        ram8_req_i;
+   logic        ram8_we_i;
+   logic [AdapterObiCfg.DataWidth/8-1:0] ram8_be_i;
+   logic [AdapterObiCfg.AddrWidth-1:0] ram8_addr_i;
+   logic [AdapterObiCfg.DataWidth-1:0] ram8_wdata_i;
+   logic        ram8_rvalid_o;
+   logic [AdapterObiCfg.DataWidth-1:0] ram8_rdata_o;
 
    assign ram8_req_i   = mem8_obi_req.req;
    assign ram8_we_i    = mem8_obi_req.a.we;
@@ -1747,69 +1434,69 @@ module secure_soc (
    logic [XbarCfg.AxiDataWidth/32-1:0]  dfi_rddata_dnv_from_phy_w;
 
    ddr3_axi #(
-       .DDR_MHZ          ( `DDR_MHZ ),
-       .DDR_WRITE_LATENCY( `DDR_WRITE_LATENCY ),
-       .DDR_READ_LATENCY ( `DDR_READ_LATENCY )
+      .DDR_MHZ          ( `DDR_MHZ ),
+      .DDR_WRITE_LATENCY( 4 ),
+      .DDR_READ_LATENCY ( 4 )
    ) i_ddr3_axi (
-       .clk_i   ( clkwiz_o ),
-       .rst_i   ( ~rst_n   ),
+      .clk_i   ( clkwiz_o ),
+      .rst_i   ( ~rst_n   ),
 
-       .inport_awvalid_i ( dram_axi_awvalid ),
-       .inport_awaddr_i  ( dram_axi_awaddr ),
-       .inport_awid_i    ( dram_axi_awid    ),
-       .inport_awlen_i   ( dram_axi_awlen        ),
-       .inport_awburst_i ( dram_axi_awburst      ),
-       .inport_awready_o ( dram_axi_awready      ),
+      .inport_awvalid_i ( dram_axi_awvalid ),
+      .inport_awaddr_i  ( dram_axi_awaddr ),
+      .inport_awid_i    ( dram_axi_awid    ),
+      .inport_awlen_i   ( dram_axi_awlen        ),
+      .inport_awburst_i ( dram_axi_awburst      ),
+      .inport_awready_o ( dram_axi_awready      ),
 
-       .inport_wvalid_i  ( dram_axi_wvalid  ),
-       .inport_wdata_i   ( dram_axi_wdata   ),
-       .inport_wstrb_i   ( dram_axi_wstrb   ),
-       .inport_wlast_i   ( dram_axi_wlast   ),
-       .inport_wready_o  ( dram_axi_wready  ),
+      .inport_wvalid_i  ( dram_axi_wvalid  ),
+      .inport_wdata_i   ( dram_axi_wdata   ),
+      .inport_wstrb_i   ( dram_axi_wstrb   ),
+      .inport_wlast_i   ( dram_axi_wlast   ),
+      .inport_wready_o  ( dram_axi_wready  ),
 
-       .inport_bready_i  ( dram_axi_bready  ),
-       .inport_bvalid_o  ( dram_axi_bvalid  ),
-       .inport_bresp_o   ( dram_axi_bresp   ),
-       .inport_bid_o     ( dram_axi_bid     ),
+      .inport_bready_i  ( dram_axi_bready  ),
+      .inport_bvalid_o  ( dram_axi_bvalid  ),
+      .inport_bresp_o   ( dram_axi_bresp   ),
+      .inport_bid_o     ( dram_axi_bid     ),
 
-       .inport_arvalid_i ( dram_axi_arvalid ),
-       .inport_araddr_i  ( dram_axi_araddr ),
-       .inport_arid_i    ( dram_axi_arid    ),
-       .inport_arlen_i   ( dram_axi_arlen        ),
-       .inport_arburst_i ( dram_axi_arburst      ),
-       .inport_arready_o ( dram_axi_arready      ),
+      .inport_arvalid_i ( dram_axi_arvalid ),
+      .inport_araddr_i  ( dram_axi_araddr ),
+      .inport_arid_i    ( dram_axi_arid    ),
+      .inport_arlen_i   ( dram_axi_arlen        ),
+      .inport_arburst_i ( dram_axi_arburst      ),
+      .inport_arready_o ( dram_axi_arready      ),
 
-       .inport_rready_i  ( dram_axi_rready  ),
-       .inport_rvalid_o  ( dram_axi_rvalid  ),
-       .inport_rdata_o   ( dram_axi_rdata   ),
-       .inport_rresp_o   ( dram_axi_rresp   ),
-       .inport_rid_o     ( dram_axi_rid     ),
-       .inport_rlast_o   ( dram_axi_rlast   ),
+      .inport_rready_i  ( dram_axi_rready  ),
+      .inport_rvalid_o  ( dram_axi_rvalid  ),
+      .inport_rdata_o   ( dram_axi_rdata   ),
+      .inport_rresp_o   ( dram_axi_rresp   ),
+      .inport_rid_o     ( dram_axi_rid     ),
+      .inport_rlast_o   ( dram_axi_rlast   ),
 
-       .dfi_rddata_i       ( dfi_rddata_from_phy_w       ),
-       .dfi_rddata_valid_i ( dfi_rddata_valid_from_phy_w ),
-       .dfi_rddata_dnv_i   ( dfi_rddata_dnv_from_phy_w   ),
+      .dfi_rddata_i       ( dfi_rddata_from_phy_w       ),
+      .dfi_rddata_valid_i ( dfi_rddata_valid_from_phy_w ),
+      .dfi_rddata_dnv_i   ( dfi_rddata_dnv_from_phy_w   ),
 
-       .dfi_address_o     ( dfi_address_to_phy_w         ),
-       .dfi_bank_o        ( dfi_bank_to_phy_w            ),
-       .dfi_cas_n_o       ( dfi_cas_n_to_phy_w           ),
-       .dfi_cke_o         ( dfi_cke_to_phy_w             ),
-       .dfi_cs_n_o        ( dfi_cs_n_to_phy_w            ),
-       .dfi_odt_o         ( dfi_odt_to_phy_w             ),
-       .dfi_ras_n_o       ( dfi_ras_n_to_phy_w           ),
-       .dfi_reset_n_o     ( dfi_reset_n_to_phy_w         ),
-       .dfi_we_n_o        ( dfi_we_n_to_phy_w            ),
-       .dfi_wrdata_o      ( dfi_wrdata_to_phy_w          ),
-       .dfi_wrdata_en_o   ( dfi_wrdata_en_to_phy_w       ),
-       .dfi_wrdata_mask_o ( dfi_wrdata_mask_to_phy_w     ),
-       .dfi_rddata_en_o   ( dfi_rddata_en_to_phy_w       )
+      .dfi_address_o     ( dfi_address_to_phy_w         ),
+      .dfi_bank_o        ( dfi_bank_to_phy_w            ),
+      .dfi_cas_n_o       ( dfi_cas_n_to_phy_w           ),
+      .dfi_cke_o         ( dfi_cke_to_phy_w             ),
+      .dfi_cs_n_o        ( dfi_cs_n_to_phy_w            ),
+      .dfi_odt_o         ( dfi_odt_to_phy_w             ),
+      .dfi_ras_n_o       ( dfi_ras_n_to_phy_w           ),
+      .dfi_reset_n_o     ( dfi_reset_n_to_phy_w         ),
+      .dfi_we_n_o        ( dfi_we_n_to_phy_w            ),
+      .dfi_wrdata_o      ( dfi_wrdata_to_phy_w          ),
+      .dfi_wrdata_en_o   ( dfi_wrdata_en_to_phy_w       ),
+      .dfi_wrdata_mask_o ( dfi_wrdata_mask_to_phy_w     ),
+      .dfi_rddata_en_o   ( dfi_rddata_en_to_phy_w       )
    );
 
-   ddr3_dfi_phy
+   ddr3_dfi_phy 
    #(
-       .DQS_TAP_DELAY_INIT(27),
-       .DQ_TAP_DELAY_INIT(0),
-       .TPHY_RDLAT(5)
+     .DQS_TAP_DELAY_INIT(27)
+    ,.DQ_TAP_DELAY_INIT(0)
+    ,.TPHY_RDLAT(5)
    )
    i_ddr3_dfi_phy (
        .clk_i         ( clk100      ),
@@ -1856,806 +1543,5 @@ module secure_soc (
        .ddr3_dq_io    ( ddr3_dq     )
    );
    `endif
-
-`else // END of CORE_CVA6
-   logic               mem_req;
-   logic [       31:0] mem_addr;
-   logic               mem_we;
-   logic [        3:0] mem_be;
-   logic [       31:0] mem_wdata;
-   logic               mem_rvalid;
-   logic [       31:0] mem_rdata;
-
-   logic               instr_req;
-   logic [       31:0] instr_addr;
-   logic               instr_gnt;
-   logic               instr_rvalid;
-   logic [       31:0] instr_rdata;
-
-   logic                data_req;
-   logic [       31:0]  data_addr;
-   logic                data_we;
-   logic [`MEM_W/8-1:0] data_be;
-   logic [`MEM_W  -1:0] data_wdata;
-   logic                data_gnt;
-   logic                data_rvalid;
-   logic [`MEM_W  -1:0] data_rdata;
-
-   logic                cache_req;
-   logic [       31:0]  cache_addr;
-   logic                cache_we;
-   logic [`MEM_W/8-1:0] cache_be;
-   logic [`MEM_W  -1:0] cache_wdata;
-   logic                cache_gnt;
-   logic                cache_rvalid;
-   logic [`MEM_W  -1:0] cache_rdata;
-
-   logic                uart_req;
-   logic [       31:0]  uart_addr;
-   logic                uart_we;
-   logic [`MEM_W/8-1:0] uart_be;
-   logic [`MEM_W  -1:0] uart_wdata;
-   logic                uart_gnt;
-   logic                uart_rvalid;
-   logic [`MEM_W  -1:0] uart_rdata;
-
-   logic                timer_req;
-   logic [       31:0]  timer_addr;
-   logic                timer_we;
-   logic [`MEM_W/8-1:0] timer_be;
-   logic [`MEM_W  -1:0] timer_wdata;
-   logic                timer_gnt;
-   logic                timer_rvalid;
-   logic [`MEM_W  -1:0] timer_rdata;
-
-   logic                qspi_req;
-   logic [       31:0]  qspi_addr;
-   logic                qspi_we;
-   logic [`MEM_W/8-1:0] qspi_be;
-   logic [`MEM_W  -1:0] qspi_wdata;
-   logic                qspi_gnt;
-   logic                qspi_rvalid;
-   logic [`MEM_W  -1:0] qspi_rdata;
-
-   `ifdef ZC706
-   logic                dram_req;
-   logic [       31:0]  dram_addr;
-   logic                dram_we;
-   logic [`MEM_W/8-1:0] dram_be;
-   logic [`MEM_W  -1:0] dram_wdata;
-   logic                dram_gnt;
-   logic                dram_rvalid;
-   logic [`MEM_W  -1:0] dram_rdata;
-   `endif
-
-   logic               imem_req;
-   logic               imem_gnt;
-   logic [       31:0] imem_addr;
-   logic               imem_rvalid;
-   logic [ `MEM_W-1:0] imem_rdata;
-
-   logic                dmem_req;
-   logic                dmem_gnt;
-   logic [       31:0]  dmem_addr;
-   logic                dmem_we;
-   logic [         3:0] dmem_be;
-   logic [`MEM_W  -1:0] dmem_wdata;
-   logic                dmem_rvalid;
-   logic                dmem_wvalid;
-   logic [`MEM_W  -1:0] dmem_rdata;
-
-   `ifdef SECOND_SRAM
-      `define ENABLE_SECOND_PORT
-   `elsif ASIC
-      `define ENABLE_SECOND_PORT
-   `endif
-
-   `ifdef ENABLE_SECOND_PORT
-   logic                mem_req2000;
-   logic [       31:0] mem_addr2000;
-   logic                mem_we2000;
-   logic [        3:0] mem_be2000;
-   logic [`MEM_W  -1:0] mem_wdata2000;
-   logic [`MEM_W  -1:0] mem_wdata2000_encrypted;
-   logic                mem_rvalid2000;
-   logic [`MEM_W  -1:0] mem_rdata2000;
-   logic [`MEM_W  -1:0] mem_rdata2000_decrypted;
-   `endif
-
-   `ifdef CORE_CV32E40P
-   cv32e40p_top #(
-       .COREV_PULP               ( `COREV_PULP ),
-       .COREV_CLUSTER            ( `COREV_CLUSTER ),
-       .FPU                      ( `FPU ),
-       .FPU_ADDMUL_LAT           ( `FPU_ADDMUL_LAT ),
-       .FPU_OTHERS_LAT           ( `FPU_OTHERS_LAT ),
-       .ZFINX                    ( `ZFINX ),
-       .NUM_MHPMCOUNTERS         ( `NUM_MHPMCOUNTERS )
-   )
-   cv32e40p_core_ip (
-       .clk_i                    (clkwiz_o),
-       .rst_ni                   (rst_n),
-
-       .pulp_clock_en_i          (`PULP_CLOCK_EN), 
-       .scan_cg_en_i             (`SCAN_CG_EN), 
-
-       .boot_addr_i              (`BOOT_ADDR),
-       .mtvec_addr_i             (`MTVEC_ADDR),
-       .dm_halt_addr_i           (`DM_HALT_ADDR),
-       .hart_id_i                (`HART_ID),
-       .dm_exception_addr_i      (`DM_EXCEPTION_ADDR),
-
-       .instr_req_o              (instr_req),
-       .instr_gnt_i              (instr_gnt),
-       .instr_rvalid_i           (instr_rvalid),
-       .instr_addr_o             (instr_addr),
-       .instr_rdata_i            (instr_rdata),
-
-       .data_req_o               (data_req),
-       .data_gnt_i               (data_gnt),
-       .data_rvalid_i            (data_rvalid),
-       .data_we_o                (data_we),
-       .data_be_o                (data_be),
-       .data_addr_o              (data_addr),
-       .data_wdata_o             (data_wdata),
-       .data_rdata_i             (data_rdata),
-
-       .irq_i                    (32'h0), 
-       .irq_ack_o                (),
-       .irq_id_o                 (),
-
-       .debug_req_i              (1'b0),
-       .debug_havereset_o        (),
-       .debug_running_o          (),
-       .debug_halted_o           (),
-
-       .fetch_enable_i           (1'b1),
-       .core_sleep_o             ()
-   );
-   `elsif CORE_IBEX
-   ibex_top #(
-       .DmBaseAddr                   (0),
-       .DmHaltAddr                   (`DM_HALT_ADDR),
-       .DmExceptionAddr              (`DM_EXCEPTION_ADDR)
-   ) ibex_core_ip (
-       .clk_i                        (clkwiz_o),
-       .rst_ni                       (rst_n),
-       .test_en_i                    (`SCAN_CG_EN),
-       .ram_cfg_i                    (prim_ram_1p_pkg::ram_1p_cfg_t'('0)),
-       .hart_id_i                    (`HART_ID),
-       .boot_addr_i                  (`BOOT_ADDR - 'h80), 
-       .instr_req_o                  (instr_req),
-       .instr_gnt_i                  (instr_gnt),
-       .instr_rvalid_i               (instr_rvalid),
-       .instr_addr_o                 (instr_addr),
-       .instr_rdata_i                (instr_rdata),
-       .instr_rdata_intg_i           (0),
-       .instr_err_i                  (0),
-       .data_req_o                   (data_req),
-       .data_gnt_i                   (data_gnt),
-       .data_rvalid_i                (data_rvalid),
-       .data_we_o                    (data_we),
-       .data_be_o                    (data_be),
-       .data_addr_o                  (data_addr),
-       .data_wdata_o                 (data_wdata),
-       .data_wdata_intg_o            (),
-       .data_rdata_i                 (data_rdata),
-       .data_rdata_intg_i            (0),
-       .data_err_i                   (0),
-       .irq_software_i               (0),
-       .irq_timer_i                  (0),
-       .irq_external_i               (0),
-       .irq_fast_i                   (0),
-       .irq_nm_i                     (0),
-       .scramble_key_valid_i         (0),
-       .scramble_key_i               (0),
-       .scramble_nonce_i             (0),
-       .scramble_req_o               (),
-       .debug_req_i                  (1'b0),
-       .crash_dump_o                 (),
-       .double_fault_seen_o          (),
-       .fetch_enable_i               (1'b1),
-       .alert_minor_o                (),
-       .alert_major_internal_o       (),
-       .alert_major_bus_o            (),
-       .core_sleep_o                 (),
-       .scan_rst_ni                  (1'b1)
-   );
-   `endif
-
-   generate
-      if(`ICACHE_SZ > 0) begin
-         cache #(
-            .ADDR_BIT_W (32),
-            .CPU_BYTE_W (4),
-            .MEM_BYTE_W (`MEM_W / 8),
-            .LINE_BYTE_W(`ICACHE_LINE_W / 8),
-            .WAY_LEN    (`ICACHE_WAY_LEN)
-         ) icache (
-            .clk_i       (clkwiz_o),
-            .rst_ni      (rst_n),
-            .hold_mem_i  (1'b0),
-            .cpu_req_i   (instr_req),
-            .cpu_addr_i  (instr_addr),
-            .cpu_we_i    ('0),
-            .cpu_be_i    ('0),
-            .cpu_wdata_i ('0),
-            .cpu_gnt_o   (instr_gnt),
-            .cpu_rvalid_o(instr_rvalid),
-            .cpu_rdata_o (instr_rdata),
-            .mem_req_o   (imem_req),
-            .mem_addr_o  (imem_addr),
-            .mem_we_o    (),
-            .mem_wdata_o (),
-            .mem_gnt_i   (imem_gnt),
-            .mem_rvalid_i(imem_rvalid),
-            .mem_rdata_i (imem_rdata)
-         );
-      end
-      else begin
-         assign instr_gnt    = imem_gnt;
-         assign instr_rvalid = imem_rvalid;
-         assign instr_rdata  = imem_rdata[31:0];
-         assign imem_req     = instr_req;
-         assign imem_addr    = instr_addr;
-      end
-   endgenerate
-
-   generate
-      if(`DCACHE_SZ > 0) begin
-         cache #(
-            .ADDR_BIT_W (32),
-            .CPU_BYTE_W (`MEM_W / 8),
-            .MEM_BYTE_W (`MEM_W / 8),
-            .LINE_BYTE_W(`DCACHE_LINE_W / 8),
-            .WAY_LEN    (`DCACHE_WAY_LEN)
-         ) dcache (
-            .clk_i     (clkwiz_o),
-            .rst_ni    (rst_n),
-            .hold_mem_i(1'b0),
-
-            .cpu_req_i   (cache_req),
-            .cpu_addr_i  (cache_addr),
-            .cpu_we_i    (cache_we),
-            .cpu_be_i    (cache_be),
-            .cpu_wdata_i (cache_wdata),
-            .cpu_gnt_o   (cache_gnt),
-            .cpu_rvalid_o(cache_rvalid),
-            .cpu_rdata_o (cache_rdata),
-
-            .mem_req_o   (dmem_req),
-            .mem_we_o    (dmem_we),
-            .mem_addr_o  (dmem_addr),
-            .mem_wdata_o (dmem_wdata),
-            .mem_gnt_i   (dmem_gnt),
-            .mem_rvalid_i(dmem_rvalid),
-            .mem_rdata_i (dmem_rdata)
-         );
-         assign dmem_be = 4'b1111;
-      end
-      else begin
-         assign dmem_req     = cache_req;
-         assign dmem_we      = cache_we;
-         assign dmem_be      = cache_be;
-         assign dmem_addr    = cache_addr;
-         assign dmem_wdata   = cache_wdata;
-         assign cache_gnt    = 1'b1; 
-         assign cache_rvalid = dmem_rvalid | dmem_wvalid;
-         assign cache_rdata  = dmem_rdata;
-      end
-   endgenerate
-
-   generate
-   `ifdef ENABLE_SECOND_PORT
-      logic mem_rvalid_combined;
-      logic [`MEM_W-1:0] mem_rdata_combined;
-      logic [31:0] combined_mem_addr;
-
-      always_comb begin
-         if (dmem_req) begin
-            combined_mem_addr = dmem_addr;
-            if (dmem_addr >= `CODE_RAM_BASE_ADDR) begin
-               mem_req2000   = dmem_req;
-               mem_addr2000  = dmem_addr;
-               mem_we2000    = dmem_we;
-               mem_be2000    = dmem_be;
-               mem_wdata2000 = dmem_wdata;
-               mem_req   = 1'b0;
-               mem_addr  = 32'h0;
-               mem_we    = 1'b0;
-               mem_be    = 4'b0;
-               mem_wdata = 32'h0;
-            end else begin
-               mem_req   = dmem_req;
-               mem_addr  = dmem_addr;
-               mem_we    = dmem_we;
-               mem_be    = dmem_be;
-               mem_wdata = dmem_wdata;
-               mem_req2000   = 1'b0;
-               mem_addr2000  = 32'h0;
-               mem_we2000    = 1'b0;
-               mem_be2000    = 4'b0;
-               mem_wdata2000 = 32'h0;
-            end
-         end else if (imem_req) begin
-            combined_mem_addr = imem_addr;
-            if (imem_addr >= `CODE_RAM_BASE_ADDR) begin
-               mem_req2000   = imem_req;
-               mem_addr2000  = imem_addr;
-               mem_we2000    = 1'b0;
-               mem_be2000    = 4'b0;
-               mem_wdata2000 = 32'h0;
-               mem_req   = 1'b0;
-               mem_addr  = 32'h0;
-               mem_we    = 1'b0;
-               mem_be    = 4'b0;
-               mem_wdata = 32'h0;
-            end else begin
-               mem_req   = imem_req;
-               mem_addr  = imem_addr;
-               mem_req2000   = 1'b0;
-               mem_addr2000  = 32'h0;
-               mem_we2000    = 1'b0;
-               mem_be2000    = 4'b0;
-               mem_wdata2000 = 32'h0;
-               mem_we    = 1'b0;
-               mem_be    = 4'b0;
-               mem_wdata = 32'h0;
-            end
-         end else begin
-            mem_req   = 1'b0;
-            mem_addr  = 32'h0;
-            mem_we    = 1'b0;
-            mem_be    = 4'b0;
-            mem_wdata = 32'h0;
-            mem_req2000   = 1'b0;
-            mem_addr2000  = 32'h0;
-            mem_we2000    = 1'b0;
-            mem_be2000    = 4'b0;
-            mem_wdata2000 = 32'h0;
-            combined_mem_addr = 32'h0;
-         end
-      end
-
-      assign imem_gnt = imem_req & ~dmem_req;
-      assign dmem_gnt = dmem_req;
-
-      assign mem_rvalid_combined = mem_rvalid | mem_rvalid2000;
-      assign mem_rdata_combined  = mem_rvalid ? mem_rdata : mem_rdata2000_decrypted;
-
-      logic        req_sources  [32];
-      logic        req_write    [32];
-      logic [31:0] imem_req_addr[32];
-      logic [ 4:0] req_count;
-      always_ff @(posedge clkwiz_o or negedge rst_n) begin
-         if (~rst_n) begin
-            req_count <= '0;
-         end else begin
-            if (mem_rvalid_combined) begin
-               for (int i = 0; i < 31; i++) begin
-                  req_sources[i]   <= req_sources[i+1];
-                  req_write[i]     <= req_write[i+1];
-                  imem_req_addr[i] <= imem_req_addr[i+1];
-               end
-               if (~imem_gnt & ~dmem_gnt) begin
-                  req_count <= req_count - 1;
-               end else begin
-                  req_sources[req_count-1]   <= dmem_gnt;
-                  req_write[req_count-1]     <= dmem_we | mem_we2000;
-                  imem_req_addr[req_count-1] <= combined_mem_addr;
-               end
-            end else if (imem_gnt | dmem_gnt) begin
-               req_sources[req_count]   <= dmem_gnt;
-               req_write[req_count]     <= dmem_we | mem_we2000;
-               imem_req_addr[req_count] <= combined_mem_addr;
-               req_count                <= req_count + 1;
-            end
-         end
-      end
-      assign imem_rvalid = mem_rvalid_combined & ~req_sources[0];
-      assign dmem_rvalid = mem_rvalid_combined & req_sources[0] & ~req_write[0];
-      assign dmem_wvalid = mem_rvalid_combined & req_sources[0] & req_write[0];
-      assign imem_rdata  = (`ICACHE_SZ > 0) ? mem_rdata_combined : mem_rdata_combined[(imem_req_addr[0][$clog2(`MEM_W)-1:0] & {3'b000, {($clog2(`MEM_W/8)-2){1'b1}}, 2'b00})*8 +: 32];
-      assign dmem_rdata  = mem_rdata_combined;
-
-   `else
-      always_comb begin
-         mem_req   = imem_req | dmem_req;
-         mem_addr  = imem_addr;
-         mem_we    = 1'b0;
-         mem_be    = dmem_be;
-         mem_wdata = dmem_wdata;
-         if (dmem_req) begin
-            mem_we   = dmem_we;
-            mem_addr = dmem_addr;
-         end
-      end
-      assign imem_gnt = imem_req & ~dmem_req;
-      assign dmem_gnt = dmem_req;
-
-      logic        req_sources  [32];
-      logic        req_write    [32];
-      logic [31:0] imem_req_addr[32];
-      logic [ 4:0] req_count;
-      always_ff @(posedge clkwiz_o or negedge rst_n) begin
-         if (~rst_n) begin
-            req_count <= '0;
-         end else begin
-            if (mem_rvalid) begin
-               for (int i = 0; i < 31; i++) begin
-                  req_sources[i]   <= req_sources[i+1];
-                  req_write[i]     <= req_write[i+1];
-                  imem_req_addr[i] <= imem_req_addr[i+1];
-               end
-               if (~imem_gnt & ~dmem_gnt) begin
-                  req_count <= req_count - 1;
-               end else begin
-                  req_sources[req_count-1]   <= dmem_gnt;
-                  req_write[req_count-1]     <= dmem_we;
-                  imem_req_addr[req_count-1] <= imem_addr;
-               end
-            end else if (imem_gnt | dmem_gnt) begin
-               req_sources[req_count]   <= dmem_gnt;
-               req_write[req_count]     <= dmem_we;
-               imem_req_addr[req_count] <= imem_addr;
-               req_count                <= req_count + 1;
-            end
-         end
-      end
-      assign imem_rvalid = mem_rvalid & ~req_sources[0];
-      assign dmem_rvalid = mem_rvalid & req_sources[0] & ~req_write[0];
-      assign dmem_wvalid = mem_rvalid & req_sources[0] & req_write[0];
-      assign imem_rdata  = (`ICACHE_SZ > 0) ? mem_rdata : mem_rdata[(imem_req_addr[0][$clog2(`MEM_W)-1:0] & {3'b000, {($clog2(`MEM_W/8)-2){1'b1}}, 2'b00})*8 +: 32];
-      assign dmem_rdata  = mem_rdata;
-   `endif
-   endgenerate
-
-   ram32 #(
-      .SIZE     (`RAM_SIZE / 4),
-      .INIT_FILE(`RAM_FPATH),
-      .USE_BOOTROM(`USE_BOOTROM)
-   ) main_memory (
-      .clk_i   (clkwiz_o),
-      .rst_ni  (rst_ni),
-      .req_i   (mem_req),
-      .we_i    (mem_req & mem_we),
-      .be_i    (mem_be),
-      .addr_i  (mem_addr),
-      .wdata_i (mem_wdata),
-      .rvalid_o(mem_rvalid),
-      .rdata_o (mem_rdata)
-
-      ,.program_rx_i(program_rx_i)
-      ,.system_reset_o(system_reset_o)
-      ,.prog_mode_led_o(prog_mode_led_o)
-   );
-
-   `ifdef ENABLE_SECOND_PORT
-   reg [31:0] addr_holder;
-   always_ff @(posedge clkwiz_o or negedge rst_n) begin
-      if (~rst_n) begin
-         addr_holder <= 32'h0;
-      end
-      else begin
-         addr_holder <= mem_addr2000 - `CODE_RAM_BASE_ADDR;
-      end
-   end
-
-   `ifdef SECURE_LAYER2
-   localparam CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
-
-   ctr_encoder_decoder #(.KEY(CTR_KEY)) ctr_dec (
-      .row_number(addr_holder),
-      .data_in(mem_rdata2000),
-      .data_out(mem_rdata2000_decrypted)
-   );
-
-   ctr_encoder_decoder #(.KEY(CTR_KEY)) ctr_enc (
-      .row_number(mem_addr2000 - `CODE_RAM_BASE_ADDR),
-      .data_in(mem_wdata2000),
-      .data_out(mem_wdata2000_encrypted)
-   );
-   `else
-   assign mem_rdata2000_decrypted = mem_rdata2000;
-   assign mem_wdata2000_encrypted = mem_wdata2000;
-   `endif
-
-   ram32 #(
-      .SIZE     (`RAM_SIZE / 4),
-      .INIT_FILE(""),
-      .USE_BOOTROM(0)
-   ) main_memory2000 (
-      .clk_i   (clkwiz_o),
-      .rst_ni  (rst_n),
-      .req_i   (mem_req2000),
-      .we_i    (mem_req2000 & mem_we2000),
-      .be_i    (mem_be2000),
-      .addr_i  (mem_addr2000 - `CODE_RAM_BASE_ADDR),
-      .wdata_i (mem_wdata2000_encrypted),
-      .rvalid_o(mem_rvalid2000),
-      .rdata_o (mem_rdata2000)
-
-      ,.program_rx_i()
-      ,.system_reset_o()
-      ,.prog_mode_led_o()
-   );
-   `endif
-
-   obi_demux_custom obi_demux_dut (
-      .clk_i (clkwiz_o),
-      .rst_ni(rst_n),
-
-      .data_req_i   (data_req),
-      .data_gnt_o   (data_gnt),
-      .data_rvalid_o(data_rvalid),
-      .data_we_i    (data_we),
-      .data_be_i    (data_be),
-      .data_addr_i  (data_addr),
-      .data_wdata_i (data_wdata),
-      .data_rdata_o (data_rdata),
-
-      .cache_req_o   (cache_req),
-      .cache_addr_o  (cache_addr),
-      .cache_we_o    (cache_we),
-      .cache_be_o    (cache_be),
-      .cache_wdata_o (cache_wdata),
-      .cache_gnt_i   (cache_gnt),
-      .cache_rvalid_i(cache_rvalid),
-      .cache_rdata_i (cache_rdata),
-
-      .uart_req_o   (uart_req),
-      .uart_addr_o  (uart_addr),
-      .uart_we_o    (uart_we),
-      .uart_be_o    (uart_be),
-      .uart_wdata_o (uart_wdata),
-      .uart_gnt_i   (uart_gnt),
-      .uart_rvalid_i(uart_rvalid),
-      .uart_rdata_i (uart_rdata),
-
-      .timer_req_o   (timer_req),
-      .timer_addr_o  (timer_addr),
-      .timer_we_o    (timer_we),
-      .timer_be_o    (timer_be),
-      .timer_wdata_o (timer_wdata),
-      .timer_gnt_i   (timer_gnt),
-      .timer_rvalid_i(timer_rvalid),
-      .timer_rdata_i (timer_rdata)
-
-      ,.qspi_req_o   (qspi_req)
-      ,.qspi_addr_o  (qspi_addr)
-      ,.qspi_we_o    (qspi_we)
-      ,.qspi_be_o    (qspi_be)
-      ,.qspi_wdata_o (qspi_wdata)
-      ,.qspi_gnt_i   (qspi_gnt)
-      ,.qspi_rvalid_i(qspi_rvalid)
-      ,.qspi_rdata_i (qspi_rdata)
-
-      `ifdef ZC706
-      ,.dram_req_o   (dram_req)
-      ,.dram_addr_o  (dram_addr)
-      ,.dram_we_o    (dram_we)
-      ,.dram_be_o    (dram_be)
-      ,.dram_wdata_o (dram_wdata)
-      ,.dram_gnt_i   (dram_gnt)
-      ,.dram_rvalid_i(dram_rvalid)
-      ,.dram_rdata_i (dram_rdata)
-      `endif
-   );
-
-   uart_controller_obi uart_dut (
-      .clk_i   (clkwiz_o),
-      .rst_ni  (rst_n),
-      .req_i   (uart_req),
-      .we_i    (uart_we),
-      .be_i    (uart_be),
-      .addr_i  (uart_addr),
-      .wdata_i (uart_wdata),
-      .gnt_o   (uart_gnt),
-      .rvalid_o(uart_rvalid),
-      .rdata_o (uart_rdata),
-      .rx_i    (program_rx_i),
-      .tx_o    (uart_tx_o)
-   );
-
-   timer_controller_obi timer_dut (
-      .clk_i   (clkwiz_o),
-      .rst_ni  (rst_n),
-      .req_i   (timer_req),
-      .we_i    (timer_we),
-      .be_i    (timer_be),
-      .addr_i  (timer_addr),
-      .wdata_i (timer_wdata),
-      .gnt_o   (timer_gnt),
-      .rvalid_o(timer_rvalid),
-      .rdata_o (timer_rdata)
-   );
-
-   `ifndef ZC706
-   `ifdef QSPI_SIM
-   wire qspi_cs_n_o;
-   wire qspi_sck_o;
-   wire [3:0] qspi_data_io;
-
-   s25fl128s #(
-      .mem_file_name("../../../tests/demo/demo_secure.vmem"),
-      .otp_file_name("none"),
-      .AddrRANGE(24'h00FFFF),
-      .TimingModel   ( "S25FL128SAGMFI000_F_30pF" ),
-      .UserPreload   (1)
-   ) flash (
-      .SI(qspi_data_io[0]),
-      .SO(qspi_data_io[1]),
-      .SCK(qspi_sck_o),
-      .CSNeg(qspi_cs_n_o),
-      .WPNeg(qspi_data_io[2]),
-      .HOLDNeg(qspi_data_io[3])
-   );
-   `endif
-
-   `ifdef ASIC
-      // ASIC QSPI logic is handled inside ASIC specific block above to allow instantiation
-   `else
-   wire [3:0] qspi_data_i;
-   wire [3:0] qspi_data_o;
-   wire [1:0] qspi_out_mod_o;
-   `ifdef BASYS3
-   IOBUF
-   io_buf0
-   (
-        .I(qspi_data_o[0])
-       ,.O(qspi_data_i[0])
-       ,.T(~(|qspi_out_mod_o))
-       ,.IO(qspi_data_io[0])
-   );
-      
-   IOBUF
-   io_buf1
-   (
-        .I(qspi_data_o[1])
-       ,.O(qspi_data_i[1])
-       ,.T(~qspi_out_mod_o[1])
-       ,.IO(qspi_data_io[1])
-      );
-      
-   IOBUF
-   io_buf2
-   (
-        .I(qspi_data_o[2])
-       ,.O(qspi_data_i[2])
-       ,.T(~(&qspi_out_mod_o))
-       ,.IO(qspi_data_io[2])
-      );
-      
-   IOBUF
-   io_buf3
-   (
-        .I(qspi_data_o[3])
-       ,.O(qspi_data_i[3])
-       ,.T(~(&qspi_out_mod_o))
-       ,.IO(qspi_data_io[3])
-   );
-
-   `ifndef EXT_FLASH
-   logic qspi_sck_o;
-   STARTUPE2 #(
-		.PROG_USR("FALSE"),
-		.SIM_CCLK_FREQ(0.0)
-	) STARTUPE2_inst (
-	   .CFGCLK(),
-	   .CFGMCLK(),
-	   .EOS(),
-	   .PREQ(),
-	   .CLK(1'b0),
-	   .GSR(1'b0),
-	   .GTS(1'b0),
-	   .KEYCLEARB(1'b0),
-	   .PACK(1'b0),
-	   .USRCCLKO(qspi_sck_o),
-	   .USRCCLKTS(1'b0),
-	   .USRDONEO(1'b1),
-	   .USRDONETS(1'b1)
-	);
-   `endif
-   `else
-   assign qspi_data_io[0] = |qspi_out_mod_o   ? qspi_data_o[0] : 1'bZ;
-   assign qspi_data_io[1] = qspi_out_mod_o[1] ? qspi_data_o[1] : 1'bZ;
-   assign qspi_data_io[2] = &qspi_out_mod_o   ? qspi_data_o[2] : 1'bZ;
-   assign qspi_data_io[3] = &qspi_out_mod_o   ? qspi_data_o[3] : 1'bZ;
-   assign qspi_data_i = qspi_data_io;
-   `endif
-
-   qspi_controller_obi qspi (
-      .clk_i         (clkwiz_o),
-      .rst_ni        (rst_n),
-      .req_i         (qspi_req),
-      .we_i          (qspi_we),
-      .be_i          (qspi_be),
-      .addr_i        (qspi_addr),
-      .wdata_i       (qspi_wdata),
-      .gnt_o         (qspi_gnt),
-      .rvalid_o      (qspi_rvalid),
-      .rdata_o       (qspi_rdata),
-      .qspi_data_i   (qspi_data_i),
-      .qspi_data_o   (qspi_data_o),
-      .qspi_out_mod_o(qspi_out_mod_o),
-      .qspi_cs_n_o   (qspi_cs_n_o),
-      .qspi_sck_o    (qspi_sck_o)
-   );
-   `endif
-   `endif
-
-   `ifdef DRAM_SIM
-   wire ddr3_reset_n;
-   wire ddr3_cke;
-   wire ddr3_ck_p;
-   wire ddr3_ck_n;
-   wire ddr3_cs_n;
-   wire ddr3_ras_n;
-   wire ddr3_cas_n;
-   wire ddr3_we_n;
-   wire [2:0] ddr3_ba;
-   wire [13:0] ddr3_addr;
-   wire ddr3_odt;
-   wire [1:0] ddr3_dm;
-   wire [1:0] ddr3_dqs_p;
-   wire [1:0] ddr3_dqs_n;
-   wire [15:0] ddr3_dq;
-
-   ddr3 ddr3_dut (
-      .rst_n  (ddr3_reset_n),
-      .ck     (ddr3_ck_p),
-      .ck_n   (ddr3_ck_n),
-      .cke    (ddr3_cke),
-      .cs_n   (ddr3_cs_n),
-      .ras_n  (ddr3_ras_n),
-      .cas_n  (ddr3_cas_n),
-      .we_n   (ddr3_we_n),
-      .dm_tdqs(ddr3_dm),
-      .ba     (ddr3_ba),
-      .addr   (ddr3_addr),
-      .dq     (ddr3_dq),
-      .dqs    (ddr3_dqs_p),
-      .dqs_n  (ddr3_dqs_n),
-      .tdqs_n (),
-      .odt    (ddr3_odt)
-   );
-   `endif
-
-   `ifdef ZC706
-   dram_controller_obi dram_dut (
-      .clk_i   (clkwiz_o),
-      .rst_ni  (rst_n),
-      .req_i   (dram_req),
-      .we_i    (dram_we),
-      .be_i    (dram_be),
-      .addr_i  (dram_addr),
-      .wdata_i (dram_wdata),
-      .gnt_o   (dram_gnt),
-      .rvalid_o(dram_rvalid),
-      .rdata_o (dram_rdata)
-
-      ,.ddr3_reset_n(ddr3_reset_n)
-      ,.ddr3_cke(ddr3_cke)
-      ,.ddr3_ck_p(ddr3_ck_p)
-      ,.ddr3_ck_n(ddr3_ck_n)
-      ,.ddr3_cs_n(ddr3_cs_n)
-      ,.ddr3_ras_n(ddr3_ras_n)
-      ,.ddr3_cas_n(ddr3_cas_n)
-      ,.ddr3_we_n(ddr3_we_n)
-      ,.ddr3_ba(ddr3_ba)
-      ,.ddr3_addr(ddr3_addr)
-      ,.ddr3_odt(ddr3_odt)
-      ,.ddr3_dm(ddr3_dm)
-      ,.ddr3_dqs_p(ddr3_dqs_p)
-      ,.ddr3_dqs_n(ddr3_dqs_n)
-      ,.ddr3_dq(ddr3_dq)
-
-      ,.clk100(clk100)
-      ,.clk_ddr(clk_ddr)
-      ,.clk_ref(clk_ref)
-      ,.clk_ddr_dqs(clk_ddr_dqs)
-   );
-   `endif
-`endif 
 
 endmodule

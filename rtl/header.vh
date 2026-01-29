@@ -72,15 +72,15 @@ PERIPHERALS
 
 // this one is memory mapped, direct access to the memory for reading and writing
 `define DRAM_BASE_ADDR  32'h8000_0000
-`define DRAM_RANGE      32'h7F00_0000
+`define DRAM_RANGE      32'h7C00_0000
 
 `define DDR3_AXI_BASE_ADDR 32'h8000_0000
-`define DDR3_AXI_RANGE     32'h7F00_0000 //32'h1F00_0000
+`define DDR3_AXI_RANGE     32'h7C00_0000 //32'h1F00_0000
 
 // SECURE_LAYER1 is the bootrom's itself compiling different bootloaders generates different bootroms
 // make compile bootloader
 // make compile secure_bootloader_qspi --> This assures SECURE_LAYER1
-`define SECURE_LAYER2 // CTR enc-dec lives on the bus, this assures keeping program encrypted in memory (sram or dram)
+//`define SECURE_LAYER2 // CTR enc-dec lives on the bus, this assures keeping program encrypted in memory (sram or dram)
 
 // One can switch between different cores
 `define CORE_CVA6
@@ -112,7 +112,7 @@ PERIPHERALS
 `define DDR_MHZ 50
 `define DDR_WRITE_LATENCY 4
 `define DDR_READ_LATENCY 3
-//`define DRAM_SIM
+`define DRAM_SIM
 //`define USE_SRAM
 //`define QSPI_SIM
 `else
@@ -123,3 +123,6 @@ PERIPHERALS
 
 `define CODE_RAM_BASE_ADDR 32'h00002000
 `define CODE_RAM_RANGE 32'h0F00_0000
+
+`define PLIC_BASE_ADDR  32'hFC00_0000
+`define PLIC_RANGE      32'h0040_0000
