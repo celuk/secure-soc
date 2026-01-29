@@ -25,7 +25,7 @@
 `define DM_EXCEPTION_ADDR 32'h0
 
 `define CPU_CLK 50_000_000
-`define BAUD_RATE 115200
+`define BAUD_RATE 921600
 
 // Cache sizes must be multiple of 64 --> e.g. 0, 64, 128, 256, ...
 `define ICACHE_SZ 0
@@ -80,14 +80,14 @@ PERIPHERALS
 // SECURE_LAYER1 is the bootrom's itself compiling different bootloaders generates different bootroms
 // make compile bootloader
 // make compile secure_bootloader_qspi --> This assures SECURE_LAYER1
-//`define SECURE_LAYER2 // CTR enc-dec lives on the bus, this assures keeping program encrypted in memory (sram or dram)
+`define SECURE_LAYER2 // CTR enc-dec lives on the bus, this assures keeping program encrypted in memory (sram or dram)
 
 // One can switch between different cores
 `define CORE_CVA6
 //`define CORE_CV32E40P
 //`define CORE_IBEX
 
-`define SECOND_SRAM
+//`define SECOND_SRAM
 
 // boot memory
 `define MEM_BASE_ADDR   32'h0000_0000
@@ -106,14 +106,14 @@ PERIPHERALS
 
 //`define DDR_100MHZ
 
-`define ASIC
-//`define ZC706
+//`define ASIC
+`define ZC706
 //`define DDR3_AXI
 `define DDR_MHZ 50
 `define DDR_WRITE_LATENCY 4
 `define DDR_READ_LATENCY 3
 //`define DRAM_SIM
-`define USE_SRAM
+//`define USE_SRAM
 //`define QSPI_SIM
 `else
 //`define BASYS3
