@@ -1,7 +1,6 @@
 `define COMMON_CELLS_ASSERTS_OFF 1
 `define ASSERTS_OFF 1
 
-`define SYNTHESIS
 `define TARGET_SYNTHESIS
 
 //`define PITON_ARIANE 1
@@ -25,7 +24,7 @@
 `define DM_EXCEPTION_ADDR 32'h0
 
 `define CPU_CLK 50_000_000
-`define BAUD_RATE 921600
+`define BAUD_RATE 115200
 
 // Cache sizes must be multiple of 64 --> e.g. 0, 64, 128, 256, ...
 `define ICACHE_SZ 0
@@ -39,28 +38,43 @@
 `define RAM_FPATH "" //"../../../tests/coremark/coremark_baremetal.hex" //"" //"../../../tests/demo/demo.hex" //"../../../tests/coremark/coremark_baremetal.hex" //"../../../tests/qspi_demo/qspi_demo.hex"
 `define RAM_SIZE 'h2F00 //'h3200 //131072 //32'h0002_0000 //131072 //256 * 1024
 
-//`define MEM_BASE_ADDR   32'h0000_0000
-//`define MEM_RANGE       32'h0F00_0000
+`define MEM_BASE_ADDR   32'h0000_0000
+`define MEM_RANGE       32'h0F00_0000
 
 `define USE_BOOTROM 1
+
+//`define BASYS3
+//`define EXT_FLASH
+//`define QSPI_SIM
+
+//`define DDR_100MHZ
+
+`define ZC706
+//`define DDR3_AXI
+`define DDR_MHZ 50
+`define DDR_WRITE_LATENCY 4
+`define DDR_READ_LATENCY 3
+`define DRAM_SIM
+//`define USE_SRAM
 
 /*
 PERIPHERALS
 0xFF000000 = UART  = 11111111000000000000000000000000
 0xFF010000 = QSPI  = 11111111000000010000000000000000
-0xFF020000 = TIMER = 11111111000000100000000000000000
-0xFF030000 = DRAM  = 11111111000000110000000000000000
+0xFF020000 = I2C   = 11111111000000100000000000000000
+0xFF030000 = GPIO  = 11111111000000110000000000000000
+0xFF040000 = USB   = 11111111000001000000000000000000
+0xFF050000 = TIMER = 11111111000001010000000000000000
+0xFF060000 = JTAG  = 11111111000001100000000000000000
 */
 
 `define UART_BASE_ADDR  32'hFF00_0000
 `define UART_RANGE      32'h0000_FFFF
 `define QSPI_BASE_ADDR  32'hFF01_0000
 `define QSPI_RANGE      32'h0000_FFFF
-`define TIMER_BASE_ADDR 32'hFF05_0000 // 32'hFF02_0000
+`define TIMER_BASE_ADDR 32'hFF05_0000
 `define TIMER_RANGE     32'h0000_FFFF
-
-// this one is not memory mapped, for accessing to internal registers
-//`define DRAM_BASE_ADDR  32'hFF07_0000 // 32'hFF03_0000
+//`define DRAM_BASE_ADDR  32'hFF07_0000
 //`define DRAM_RANGE      32'h0000_FFFF
 
 // https://github.com/pulp-platform/clint
@@ -70,59 +84,13 @@ PERIPHERALS
 `define CLINT_BASE_ADDR 32'hFF08_0000
 `define CLINT_RANGE     32'h0000_FFFF
 
-// this one is memory mapped, direct access to the memory for reading and writing
 `define DRAM_BASE_ADDR  32'h8000_0000
-`define DRAM_RANGE      32'h7C00_0000
+`define DRAM_RANGE      32'h7F00_0000
 
 `define DDR3_AXI_BASE_ADDR 32'h8000_0000
-`define DDR3_AXI_RANGE     32'h7C00_0000 //32'h1F00_0000
+`define DDR3_AXI_RANGE     32'h7F00_0000 //32'h1F00_0000
 
 // SECURE_LAYER1 is the bootrom's itself compiling different bootloaders generates different bootroms
 // make compile bootloader
-// make compile secure_bootloader_qspi --> This assures SECURE_LAYER1
-//`define SECURE_LAYER2 // CTR enc-dec lives on the bus, this assures keeping program encrypted in memory (sram or dram)
-
-// One can switch between different cores
-`define CORE_CVA6
-//`define CORE_CV32E40P
-//`define CORE_IBEX
-
-//`define SECOND_SRAM
-
-// boot memory
-`define MEM_BASE_ADDR   32'h0000_0000
-`ifdef CORE_CVA6
-    `define MEM_RANGE       32'h0F00_0000 //32'h0000_1FFF
-`elsif SECOND_SRAM
-    `define MEM_RANGE       32'h0000_1FFF
-`else
-    `define MEM_RANGE       32'h0F00_0000
-`endif
-
-`ifdef CORE_CVA6
-//`define BASYS3
-//`define EXT_FLASH
-//`define QSPI_SIM
-
-//`define DDR_100MHZ
-
-//`define ASIC
-`define ZC706
-//`define DDR3_AXI
-`define DDR_MHZ 50
-`define DDR_WRITE_LATENCY 4
-`define DDR_READ_LATENCY 3
-`define DRAM_SIM
-//`define USE_SRAM
-//`define QSPI_SIM
-`else
-//`define BASYS3
-//`define EXT_FLASH
-`define QSPI_SIM
-`endif
-
-`define CODE_RAM_BASE_ADDR 32'h00002000
-`define CODE_RAM_RANGE 32'h0F00_0000
-
-`define PLIC_BASE_ADDR  32'hFC00_0000
-`define PLIC_RANGE      32'h0040_0000
+// make compile secure_bootloader --> This assures SECURE_LAYER1
+`define SECURE_LAYER2 // CTR enc-dec lives on the bus, this assures keeping program encrypted in memory (sram or dram)
