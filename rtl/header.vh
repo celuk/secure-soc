@@ -107,13 +107,13 @@ PERIPHERALS
 //`define DDR_100MHZ
 
 //`define ASIC
-`define ZC706
+//`define ZC706
 //`define DDR3_AXI
 `define DDR_MHZ 50
 `define DDR_WRITE_LATENCY 4
 `define DDR_READ_LATENCY 3
-`define DRAM_SIM
-//`define USE_SRAM
+//`define DRAM_SIM
+`define USE_SRAM
 //`define QSPI_SIM
 `else
 //`define BASYS3
