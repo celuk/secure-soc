@@ -69,7 +69,7 @@ always_comb begin
       61:    rdata_o = 32'h00000000;
       62:    rdata_o = 32'h00000000;
       63:    rdata_o = 32'h00000000;
-      64:    rdata_o = 32'h00003117;
+      64:    rdata_o = 32'h0003F117;
       65:    rdata_o = 32'h00010113;
       66:    rdata_o = 32'h3EC00313;
       67:    rdata_o = 32'h40400393;
@@ -82,7 +82,7 @@ always_comb begin
       74:    rdata_o = 32'h00000593;
       75:    rdata_o = 32'h00000097;
       76:    rdata_o = 32'hFD408093;
-      77:    rdata_o = 32'h0FC000EF;
+      77:    rdata_o = 32'h0FC0006F;
       78:    rdata_o = 32'h0000006F;
       79:    rdata_o = 32'hFB010113;
       80:    rdata_o = 32'h04112623;
