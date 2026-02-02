@@ -45,7 +45,7 @@ bss_clear_end:
     li a0, 0
     li a1, 0
     la ra, _start
-    jal main	
+    j main	
     #1: j 1b
 
 # default exception handler (infinite loop)
