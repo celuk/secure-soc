@@ -66,25 +66,6 @@ def convert_hex_to_mem_init(input_files, output_file):
                     has_data = True
             
             if has_data:
-                # Output format:
-                # Addr (32-bit hex) Data (128-bit hex, big-endian equivalent for the line?)
-                # The original script does: bytes_16.reverse() then join.
-                # If bytes_16 is [b0, b1, ... b15] where b0 is at addr, b15 at addr+15.
-                # limit: Data bus width is 128? Or is it just a hex format for a loading tool?
-                # Reversing bytes_16 makes the byte at addr+15 come first in string, and byte at addr come last.
-                # This corresponds to Little Endian memory view if interpreted as one large integer, 
-                # or Big Endian if data_word is written as MSB first.
-                # Example: Memory 0: 0x17. Memory 1: 0xF1.
-                # bytes defined: [17, F1, ...]
-                # reversed: [..., F1, 17]
-                # string: "...F117"
-                # This matches the Hex file input logic reversed.
-                # Input "0003F117" -> 17 at addr, F1 at addr+1, 03 at addr+2, 00 at addr+3.
-                # If we read back:
-                # bytes: [17, F1, 03, 00, ...]
-                # reversed chunk of 4: [00, 03, F1, 17] -> "0003F117"
-                # So preserving the original script's output formatting logic is correct.
-                
                 bytes_16.reverse()
                 hex_parts = [f"{byte:02X}" for byte in bytes_16]
                 data_word = "".join(hex_parts)

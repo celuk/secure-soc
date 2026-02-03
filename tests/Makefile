@@ -111,6 +111,10 @@ all:
 	$(RISCVTYPE)-objcopy -O verilog $(CPATH).riscv $(CPATH).vmem
 	python3 ../tools/vmem_to_ddr3_init.py -i $(CPATH).vmem -o $(CPATH)_mem_init.txt
 
+	python3 ../tools/hex_to_ctr_hex.py -i $(CPATH).hex -o $(CPATH)_ctr.hex --start-row 0x80000000
+	python3 ../tools/hex_to_ddr3_init.py -i $(CPATH)_ctr.hex -o $(CPATH)_mem_init_ctr.txt
+#	python3 ../tools/meminit_to_ctr_meminit.py -i $(CPATH)_mem_init.txt -o $(CPATH)_mem_init_ctr.txt
+
 ## use this for qspi flash sim
 ifeq ($(BOOT), 1)
 	python3 ../tools/clear_adresses_for_qspi_boot.py -f $(CPATH).vmem --place_zero > $(CPATH).tmp
