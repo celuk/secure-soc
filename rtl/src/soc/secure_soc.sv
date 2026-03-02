@@ -919,7 +919,7 @@ module secure_soc (
    ctr_encoder_decoder #(
        .KEY(DDR3_CTR_KEY)
    ) ddr3_ctr_enc (
-       .row_number (w_addr_mux),
+       .row_number ({w_addr_mux[31:2], 2'b00}),
        .data_in    (atomics_mst_wdata),
        .data_out   (ddr3_wdata_encrypted)
    );
@@ -973,7 +973,7 @@ module secure_soc (
    ctr_encoder_decoder #(
        .KEY(DDR3_CTR_KEY)
    ) ddr3_ctr_dec (
-       .row_number (r_addr_mux),
+       .row_number ({r_addr_mux[31:2], 2'b00}),
        .data_in    (encrypted_axi_rdata),
        .data_out   (ddr3_rdata_decrypted)
    );

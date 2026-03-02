@@ -41,86 +41,56 @@ def ctr_keystream_generator(key, row_number):
         
     return keystream
 
-def encrypt_128bit_line(file_addr, data_str, key, base_addr):
-    """Encrypt a single 128-bit (32 hex char) data line at the given file address."""
-    if len(data_str) != 32:
-        data_str = data_str.zfill(32)
-
-    chunks_hex = [data_str[i:i+8] for i in range(0, 32, 8)]
-
-    encrypted_chunks = []
-    for i, chunk_hex in enumerate(chunks_hex):
-        offset = (3 - i) * 4
-        word = int(chunk_hex, 16)
-        enc_addr = (file_addr + offset + base_addr) & 0xFFFFFFFF
-        keystream = ctr_keystream_generator(key, enc_addr)
-        enc_word = word ^ keystream
-        encrypted_chunks.append(f"{enc_word:08X}")
-
-    return "".join(encrypted_chunks)
-
-
-def process_file(input_file, output_file, key, base_addr, fill_to=None):
+def process_file(input_file, output_file, key, base_addr):
     try:
-        # First pass: read all entries and track addresses
-        entries = {}
-        with open(input_file, 'r') as f_in:
+        with open(input_file, 'r') as f_in, open(output_file, 'w') as f_out:
             for line in f_in:
                 line = line.strip()
                 if not line:
                     continue
-
+                
                 parts = line.split()
                 if len(parts) != 2:
                     print(f"Skipping invalid line: {line}")
                     continue
-
+                
                 addr_str, data_str = parts
+                
                 try:
                     file_addr = int(addr_str, 16)
-                    entries[file_addr] = data_str
+                    
+                    if len(data_str) != 32:
+                         # Padding if necessary, though format expects 32 hex chars
+                         data_str = data_str.zfill(32)
+
+                    # Split hex string into 4 chunks of 8 characters (32-bit words)
+                    # data_str is e.g. "MSW...LSW"
+                    chunks_hex = [data_str[i:i+8] for i in range(0, 32, 8)]
+                    
+                    encrypted_chunks = []
+                    for i, chunk_hex in enumerate(chunks_hex):
+                        # Corresponding offsets: 
+                        # i=0 (Leftmost 8 chars) -> Offset 12 (Word 3)
+                        # i=1 -> Offset 8 (Word 2)
+                        # i=2 -> Offset 4 (Word 1)
+                        # i=3 (Rightmost 8 chars) -> Offset 0 (Word 0)
+                        offset = (3 - i) * 4
+                        
+                        word = int(chunk_hex, 16)
+                        enc_addr = (file_addr + offset + base_addr) & 0xFFFFFFFF
+                        
+                        keystream = ctr_keystream_generator(key, enc_addr)
+                        enc_word = word ^ keystream
+                        
+                        encrypted_chunks.append(f"{enc_word:08X}")
+                    
+                    encrypted_data_str = "".join(encrypted_chunks)
+                    
+                    f_out.write(f"{addr_str} {encrypted_data_str}\n")
+                    
                 except ValueError:
                     print(f"Skipping invalid numbers in line: {line}")
-
-        if not entries:
-            print("Warning: No valid entries found in input file.")
-            return
-
-        min_addr = min(entries.keys())
-        max_addr = max(entries.keys())
-
-        # Each line covers 16 bytes (128 bits)
-        line_step = 16
-
-        # Determine fill range
-        if fill_to is not None:
-            # fill_to is in SoC address space, convert to file address space
-            fill_to_file = fill_to - base_addr
-            end_addr = max(max_addr, fill_to_file)
-        else:
-            end_addr = max_addr
-
-        # Second pass: write output with gaps filled by encrypted zeros
-        filled_count = 0
-        with open(output_file, 'w') as f_out:
-            addr = min_addr
-            while addr <= end_addr:
-                addr_str = f"{addr:08X}"
-                if addr in entries:
-                    data_str = entries[addr]
-                else:
-                    data_str = "00000000000000000000000000000000"
-                    filled_count += 1
-
-                encrypted_data_str = encrypt_128bit_line(addr, data_str, key, base_addr)
-                f_out.write(f"{addr_str} {encrypted_data_str}\n")
-                addr += line_step
-
-        if filled_count > 0:
-            print(f"Filled {filled_count} lines with encrypted zeros "
-                  f"(range: 0x{min_addr:08X}-0x{end_addr:08X}, "
-                  f"SoC: 0x{min_addr + base_addr:08X}-0x{end_addr + base_addr:08X})")
-
+                    
     except FileNotFoundError:
         print(f"Error: Input file {input_file} not found.")
         sys.exit(1)
@@ -150,24 +120,17 @@ def main():
         default=hex(DEFAULT_BASE_ADDR),
         help="Base address to add to file address (default: 0x80000000)."
     )
-    parser.add_argument(
-        "--fill-to",
-        default=0x80080000,
-        help="Fill with encrypted zeros up to this SoC address (e.g., 0x80040000). "
-             "Ensures BSS, scratch, and heap areas are properly initialized for SECURE_LAYER2."
-    )
     
     args = parser.parse_args()
     
     try:
         key_val = int(args.key, 16)
         base_addr_val = int(args.base_addr, 0) # handles 0x or plain
-        fill_to_val = args.fill_to if isinstance(args.fill_to, int) else (int(args.fill_to, 0) if args.fill_to else None)
     except ValueError:
-        print("Error: Invalid key, base address, or fill-to format.")
+        print("Error: Invalid key or base address format.")
         sys.exit(1)
 
-    process_file(args.input, args.output, key_val, base_addr_val, fill_to_val)
+    process_file(args.input, args.output, key_val, base_addr_val)
 
 if __name__ == "__main__":
     main()
