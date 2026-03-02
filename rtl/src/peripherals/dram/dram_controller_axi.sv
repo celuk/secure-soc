@@ -154,7 +154,7 @@ module dram_controller_axi #(
    );
 
     assign s_axi_awready = (current_state == S_IDLE);
-    assign s_axi_arready = (current_state == S_IDLE);
+    assign s_axi_arready = (current_state == S_IDLE) && !s_axi_awvalid;
     assign s_axi_wready  = (current_state == S_WRITE_WAIT_DATA);
 
     assign s_axi_bvalid = (current_state == S_WRITE_RESP_AXI);
