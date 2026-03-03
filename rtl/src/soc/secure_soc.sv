@@ -853,20 +853,40 @@ module secure_soc (
    logic [XbarCfg.AxiDataWidth-1:0] ddr3_wdata_encrypted;
    logic [XbarCfg.AxiDataWidth-1:0] ddr3_rdata_decrypted;
    logic [31:0] uart_dram_write_data_in;
+   logic        uart_dram_write_we_in;
+   logic [31:0] uart_dram_write_addr_in;
 
    `ifdef SECURE_LAYER2
    localparam DDR3_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
 
+   wire rst_n_dram = (rst_ni & system_reset_o & pll_locked) || uart_dram_mode;
+
    // 1. UART/BOOTLOADER WRITE PATH ENCRYPTION
    logic [31:0] uart_dram_write_data_enc;
+   logic        uart_dram_write_we_d;
+   logic [31:0] uart_dram_write_addr_d;
    ctr_encoder_decoder #(
        .KEY(DDR3_CTR_KEY)
    ) uart_loader_ctr_enc (
+       .clk_i      (clkwiz_o),
+       .rst_ni     (rst_n_dram),
        .row_number (uart_dram_write_addr + 'h80000000),
        .data_in    (uart_dram_write_data),
        .data_out   (uart_dram_write_data_enc)
    );
+   // Delay WE and ADDR by 1 cycle to match encrypted data output
+   always_ff @(posedge clkwiz_o or negedge rst_n_dram) begin
+      if (~rst_n_dram) begin
+         uart_dram_write_we_d   <= 1'b0;
+         uart_dram_write_addr_d <= '0;
+      end else begin
+         uart_dram_write_we_d   <= uart_dram_write_we;
+         uart_dram_write_addr_d <= uart_dram_write_addr;
+      end
+   end
    assign uart_dram_write_data_in = uart_dram_write_data_enc;
+   assign uart_dram_write_we_in   = uart_dram_write_we_d;
+   assign uart_dram_write_addr_in = uart_dram_write_addr_d;
 
    // 2. AXI WRITE PATH (Atomicity/Burst Handling)
    logic w_addr_fifo_push, w_addr_fifo_pop, w_addr_fifo_empty, w_addr_fifo_full;
@@ -878,8 +898,6 @@ module secure_soc (
    assign w_addr_fifo_push = atomics_mst_awvalid && atomics_mst_awready;
    assign w_addr_fifo_data_i = atomics_mst_awaddr;
    assign w_addr_fifo_pop = atomics_mst_wvalid && atomics_mst_wready && !w_burst_active;
-
-   wire rst_n_dram = (rst_ni & system_reset_o & pll_locked) || uart_dram_mode;
 
    always_ff @(posedge clkwiz_o or negedge rst_n_dram) begin
       if (~rst_n_dram) w_burst_active <= 1'b0;
@@ -919,6 +937,8 @@ module secure_soc (
    ctr_encoder_decoder #(
        .KEY(DDR3_CTR_KEY)
    ) ddr3_ctr_enc (
+       .clk_i      (clkwiz_o),
+       .rst_ni     (rst_n_dram),
        .row_number ({w_addr_mux[31:2], 2'b00}),
        .data_in    (atomics_mst_wdata),
        .data_out   (ddr3_wdata_encrypted)
@@ -973,6 +993,8 @@ module secure_soc (
    ctr_encoder_decoder #(
        .KEY(DDR3_CTR_KEY)
    ) ddr3_ctr_dec (
+       .clk_i      (clkwiz_o),
+       .rst_ni     (rst_n_dram),
        .row_number ({r_addr_mux[31:2], 2'b00}),
        .data_in    (encrypted_axi_rdata),
        .data_out   (ddr3_rdata_decrypted)
@@ -981,6 +1003,8 @@ module secure_soc (
    assign ddr3_wdata_encrypted = atomics_mst_wdata;
    assign ddr3_rdata_decrypted = encrypted_axi_rdata;
    assign uart_dram_write_data_in = uart_dram_write_data;
+   assign uart_dram_write_we_in   = uart_dram_write_we;
+   assign uart_dram_write_addr_in = uart_dram_write_addr;
    `endif
 
    assign encrypted_axi_awvalid = atomics_mst_awvalid;
@@ -991,11 +1015,37 @@ module secure_soc (
    assign encrypted_axi_awsize  = atomics_mst_awsize;
    assign encrypted_axi_awburst = atomics_mst_awburst;
    assign encrypted_axi_awprot  = atomics_mst_awprot;
+
+   `ifdef SECURE_LAYER2
+   // Write data channel: 1-cycle pipeline for encryption latency
+   logic enc_wvalid_q;
+   logic [XbarCfg.AxiDataWidth/8-1:0] enc_wstrb_q;
+   logic enc_wlast_q;
+   wire enc_w_accept = !enc_wvalid_q || encrypted_axi_wready;
+
+   always_ff @(posedge clkwiz_o or negedge rst_n_dram) begin
+      if (~rst_n_dram) enc_wvalid_q <= 1'b0;
+      else if (enc_w_accept) enc_wvalid_q <= atomics_mst_wvalid;
+   end
+   always_ff @(posedge clkwiz_o) begin
+      if (enc_w_accept) begin
+         enc_wstrb_q <= atomics_mst_wstrb;
+         enc_wlast_q <= atomics_mst_wlast;
+      end
+   end
+
+   assign encrypted_axi_wvalid  = enc_wvalid_q;
+   assign atomics_mst_wready    = enc_w_accept;
+   assign encrypted_axi_wstrb   = enc_wstrb_q;
+   assign encrypted_axi_wlast   = enc_wlast_q;
+   `else
    assign encrypted_axi_wvalid  = atomics_mst_wvalid;
    assign atomics_mst_wready    = encrypted_axi_wready;
-   assign encrypted_axi_wdata   = ddr3_wdata_encrypted;
    assign encrypted_axi_wstrb   = atomics_mst_wstrb;
    assign encrypted_axi_wlast   = atomics_mst_wlast;
+   `endif
+
+   assign encrypted_axi_wdata   = ddr3_wdata_encrypted;
    assign atomics_mst_bvalid    = encrypted_axi_bvalid;
    assign encrypted_axi_bready  = atomics_mst_bready;
    assign atomics_mst_bid       = encrypted_axi_bid;
@@ -1008,12 +1058,41 @@ module secure_soc (
    assign encrypted_axi_arsize  = atomics_mst_arsize;
    assign encrypted_axi_arburst = atomics_mst_arburst;
    assign encrypted_axi_arprot  = atomics_mst_arprot;
+
+   `ifdef SECURE_LAYER2
+   // Read data channel: 1-cycle pipeline for decryption latency
+   logic dec_rvalid_q;
+   logic [AXI_ID_WIDTH_XBAR_MST-1:0] dec_rid_q;
+   logic [1:0] dec_rresp_q;
+   logic dec_rlast_q;
+   wire dec_r_accept = !dec_rvalid_q || atomics_mst_rready;
+
+   always_ff @(posedge clkwiz_o or negedge rst_n_dram) begin
+      if (~rst_n_dram) dec_rvalid_q <= 1'b0;
+      else if (dec_r_accept) dec_rvalid_q <= encrypted_axi_rvalid;
+   end
+   always_ff @(posedge clkwiz_o) begin
+      if (dec_r_accept) begin
+         dec_rid_q   <= encrypted_axi_rid;
+         dec_rresp_q <= encrypted_axi_rresp;
+         dec_rlast_q <= encrypted_axi_rlast;
+      end
+   end
+
+   assign atomics_mst_rvalid    = dec_rvalid_q;
+   assign encrypted_axi_rready  = dec_r_accept;
+   assign atomics_mst_rid       = dec_rid_q;
+   assign atomics_mst_rresp     = dec_rresp_q;
+   assign atomics_mst_rlast     = dec_rlast_q;
+   `else
    assign atomics_mst_rvalid    = encrypted_axi_rvalid;
    assign encrypted_axi_rready  = atomics_mst_rready;
    assign atomics_mst_rid       = encrypted_axi_rid;
-   assign atomics_mst_rdata     = ddr3_rdata_decrypted;
    assign atomics_mst_rresp     = encrypted_axi_rresp;
    assign atomics_mst_rlast     = encrypted_axi_rlast;
+   `endif
+
+   assign atomics_mst_rdata     = ddr3_rdata_decrypted;
 
    dram_controller_axi #(
        .AXI_ID_WIDTH  (AXI_ID_WIDTH_XBAR_MST),
@@ -1072,8 +1151,8 @@ module secure_soc (
        .clk_ddr      (clk_ddr),
        .clk_ref      (clk_ref),
        .clk_ddr_dqs  (clk_ddr_dqs),
-       .uart_dram_write_we_i   (uart_dram_write_we),
-       .uart_dram_write_addr_i (uart_dram_write_addr),
+       .uart_dram_write_we_i   (uart_dram_write_we_in),
+       .uart_dram_write_addr_i (uart_dram_write_addr_in),
        .uart_dram_write_data_i (uart_dram_write_data_in),
        .uart_dram_write_rst_i  (0)
    );
@@ -1104,12 +1183,16 @@ module secure_soc (
    localparam SRAM_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
 
    ctr_encoder_decoder #(.KEY(SRAM_CTR_KEY)) sram_ctr_enc (
+      .clk_i(clkwiz_o),
+      .rst_ni(rst_n),
       .row_number(mem8_obi_req.a.addr),
       .data_in(mem8_obi_req.a.wdata),
       .data_out(sram_wdata_encrypted)
    );
 
    ctr_encoder_decoder #(.KEY(SRAM_CTR_KEY)) sram_ctr_dec (
+      .clk_i(clkwiz_o),
+      .rst_ni(rst_n),
       .row_number(sram_addr_holder),
       .data_in(ram8_rdata_o),
       .data_out(sram_rdata_decrypted)
@@ -1154,6 +1237,30 @@ module secure_soc (
       .rsp_read_ruser_o (), .rsp_r_user_i ('0)
    );
 
+   `ifdef SECURE_LAYER2
+   // Write: defer SRAM write by 1 cycle for encryption pipeline
+   logic sram_wr_phase2;
+   always_ff @(posedge clkwiz_o or negedge rst_n) begin
+      if (~rst_n) sram_wr_phase2 <= 1'b0;
+      else sram_wr_phase2 <= mem8_obi_req.req && mem8_obi_req.a.we && !sram_wr_phase2;
+   end
+
+   assign ram8_req_i   = sram_wr_phase2 || (mem8_obi_req.req && !mem8_obi_req.a.we);
+   assign ram8_we_i    = sram_wr_phase2;
+   assign ram8_addr_i  = mem8_obi_req.a.addr[30:0];
+   assign ram8_wdata_i = sram_wdata_encrypted;
+   assign ram8_be_i    = mem8_obi_req.a.be;
+
+   assign mem8_obi_rsp.gnt = mem8_obi_req.req && (!mem8_obi_req.a.we || sram_wr_phase2);
+
+   // Read: delay rvalid by 1 cycle for decryption pipeline
+   logic ram8_rvalid_d;
+   always_ff @(posedge clkwiz_o or negedge rst_n) begin
+      if (~rst_n) ram8_rvalid_d <= 1'b0;
+      else ram8_rvalid_d <= ram8_rvalid_o;
+   end
+   assign mem8_obi_rsp.rvalid = ram8_rvalid_d;
+   `else
    assign ram8_req_i   = mem8_obi_req.req;
    assign ram8_we_i    = mem8_obi_req.a.we;
    assign ram8_addr_i  = mem8_obi_req.a.addr[30:0];
@@ -1162,6 +1269,7 @@ module secure_soc (
 
    assign mem8_obi_rsp.gnt    = 1;
    assign mem8_obi_rsp.rvalid = ram8_rvalid_o;
+   `endif
    assign mem8_obi_rsp.r.rdata = sram_rdata_decrypted;
    assign mem8_obi_rsp.r.rid   = mem8_obi_req.a.aid;
    assign mem8_obi_rsp.r.err  = 1'b0;

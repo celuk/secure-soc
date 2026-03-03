@@ -112,7 +112,7 @@ PERIPHERALS
 `define DDR_MHZ 50
 `define DDR_WRITE_LATENCY 4
 `define DDR_READ_LATENCY 3
-//`define DRAM_SIM
+`define DRAM_SIM
 //`define USE_SRAM
 //`define QSPI_SIM
 `else
