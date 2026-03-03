@@ -1017,27 +1017,19 @@ module secure_soc (
    assign encrypted_axi_awprot  = atomics_mst_awprot;
 
    `ifdef SECURE_LAYER2
-   // Write data channel: 1-cycle pipeline for encryption latency
-   logic enc_wvalid_q;
-   logic [XbarCfg.AxiDataWidth/8-1:0] enc_wstrb_q;
-   logic enc_wlast_q;
-   wire enc_w_accept = !enc_wvalid_q || encrypted_axi_wready;
-
+   // Write data channel: 1-cycle bubble for encryption latency
+   // Hold off both sides for 1 cycle while CTR computes, then forward.
+   logic enc_ready;
    always_ff @(posedge clkwiz_o or negedge rst_n_dram) begin
-      if (~rst_n_dram) enc_wvalid_q <= 1'b0;
-      else if (enc_w_accept) enc_wvalid_q <= atomics_mst_wvalid;
-   end
-   always_ff @(posedge clkwiz_o) begin
-      if (enc_w_accept) begin
-         enc_wstrb_q <= atomics_mst_wstrb;
-         enc_wlast_q <= atomics_mst_wlast;
-      end
+      if (~rst_n_dram) enc_ready <= 1'b0;
+      else if (enc_ready && encrypted_axi_wready) enc_ready <= 1'b0;
+      else if (atomics_mst_wvalid && !enc_ready) enc_ready <= 1'b1;
    end
 
-   assign encrypted_axi_wvalid  = enc_wvalid_q;
-   assign atomics_mst_wready    = enc_w_accept;
-   assign encrypted_axi_wstrb   = enc_wstrb_q;
-   assign encrypted_axi_wlast   = enc_wlast_q;
+   assign encrypted_axi_wvalid  = enc_ready;
+   assign atomics_mst_wready    = enc_ready && encrypted_axi_wready;
+   assign encrypted_axi_wstrb   = atomics_mst_wstrb;
+   assign encrypted_axi_wlast   = atomics_mst_wlast;
    `else
    assign encrypted_axi_wvalid  = atomics_mst_wvalid;
    assign atomics_mst_wready    = encrypted_axi_wready;
@@ -1060,30 +1052,20 @@ module secure_soc (
    assign encrypted_axi_arprot  = atomics_mst_arprot;
 
    `ifdef SECURE_LAYER2
-   // Read data channel: 1-cycle pipeline for decryption latency
-   logic dec_rvalid_q;
-   logic [AXI_ID_WIDTH_XBAR_MST-1:0] dec_rid_q;
-   logic [1:0] dec_rresp_q;
-   logic dec_rlast_q;
-   wire dec_r_accept = !dec_rvalid_q || atomics_mst_rready;
-
+   // Read data channel: 1-cycle bubble for decryption latency
+   // Hold off both sides for 1 cycle while CTR computes, then forward.
+   logic dec_ready;
    always_ff @(posedge clkwiz_o or negedge rst_n_dram) begin
-      if (~rst_n_dram) dec_rvalid_q <= 1'b0;
-      else if (dec_r_accept) dec_rvalid_q <= encrypted_axi_rvalid;
-   end
-   always_ff @(posedge clkwiz_o) begin
-      if (dec_r_accept) begin
-         dec_rid_q   <= encrypted_axi_rid;
-         dec_rresp_q <= encrypted_axi_rresp;
-         dec_rlast_q <= encrypted_axi_rlast;
-      end
+      if (~rst_n_dram) dec_ready <= 1'b0;
+      else if (dec_ready && atomics_mst_rready) dec_ready <= 1'b0;
+      else if (encrypted_axi_rvalid && !dec_ready) dec_ready <= 1'b1;
    end
 
-   assign atomics_mst_rvalid    = dec_rvalid_q;
-   assign encrypted_axi_rready  = dec_r_accept;
-   assign atomics_mst_rid       = dec_rid_q;
-   assign atomics_mst_rresp     = dec_rresp_q;
-   assign atomics_mst_rlast     = dec_rlast_q;
+   assign atomics_mst_rvalid    = dec_ready;
+   assign encrypted_axi_rready  = dec_ready && atomics_mst_rready;
+   assign atomics_mst_rid       = encrypted_axi_rid;
+   assign atomics_mst_rresp     = encrypted_axi_rresp;
+   assign atomics_mst_rlast     = encrypted_axi_rlast;
    `else
    assign atomics_mst_rvalid    = encrypted_axi_rvalid;
    assign encrypted_axi_rready  = atomics_mst_rready;
