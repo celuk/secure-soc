@@ -2,25 +2,30 @@
 // Adapted from "PRINCE – A Low-Latency Block Cipher for Pervasive Computing" paper and reference implementation:
 // https://github.com/huljar/prince-vhdl
 
-module prince_enc_dec #(
-    parameter [127:0] KEY = 128'hDEADBEEF_CAFEF00D_BAADF00D_12345678
-) (
-    input  wire        clk_i,
-    input  wire        rst_ni,
-    input  wire [31:0] addr,
-    input  wire [31:0] data_in,
-    input  wire [31:0] nonce,
-    output reg  [31:0] data_out
+module prince_enc_dec #( 
+    parameter [127:0] KEY = 128'hDEADBEEF_CAFEF00D_BAADF00D_12345678 
+) ( 
+    input  wire        clk_i, 
+    input  wire        rst_ni, 
+    input  wire [31:0] addr, 
+    input  wire [31:0] data_in, 
+    input  wire [31:0] nonce, 
+    output reg  [31:0] data_out 
 );
 
-    wire [63:0] prince_input = {nonce, addr};
-    wire [63:0] k0 = KEY[127:64];
+    // The 64-bit counter increments every 8 bytes (64-bit block).
+    // We construct the counter using addr[31:3] and zero out the lower 3 bits.
+    wire [63:0] prince_input = {nonce, addr[31:3], 3'b000};
+    
+    wire[63:0] k0 = KEY[127:64];
     wire [63:0] k1 = KEY[63:0];
     wire [63:0] k0_prime = {k0[0], k0[63:2], k0[1] ^ k0[63]};
 
     wire [63:0] core_in  = prince_input ^ k0;
     wire [63:0] core_out;
-    wire [63:0] keystream = core_out ^ k0_prime;
+    
+    // Full 64-bit keystream for the 8-byte block
+    wire [63:0] keystream_block = core_out ^ k0_prime;
 
     prince_core_combinational i_prince_core (
         .data_in  (core_in),
@@ -28,15 +33,18 @@ module prince_enc_dec #(
         .data_out (core_out)
     );
 
+    // If the address ends in 0x0/0x8, use the lower 32 bits.
+    // If the address ends in 0x4/0xC, use the upper 32 bits.
+    wire [31:0] keystream_word = addr[2] ? keystream_block[63:32] : keystream_block[31:0];
+
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             data_out <= '0;
         else
-            data_out <= data_in ^ keystream[31:0];
+            data_out <= data_in ^ keystream_word;
     end
 
 endmodule
-
 
 // PRINCE core: 12 rounds (round 0 through 11), fully combinational.
 // Round structure:

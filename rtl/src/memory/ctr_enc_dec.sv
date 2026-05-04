@@ -1,4 +1,4 @@
-module ctr_encoder_decoder #(parameter KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210) (
+module ctr_enc_dec #(parameter KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210) (
     input  wire        clk_i,
     input  wire        rst_ni,
     input  wire [31:0] row_number,
