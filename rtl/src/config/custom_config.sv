@@ -76,7 +76,7 @@ package cva6_config_pkg;
       MaxOutstandingStores: unsigned'(0),
       DebugEn: bit'(1),
       AxiBurstWriteEn: bit'(0),
-      IcacheByteSize: unsigned'(4096),
+      IcacheByteSize: unsigned'(128),
       IcacheSetAssoc: unsigned'(2),
       IcacheLineWidth: unsigned'(64),
       DCacheType: CVA6ConfigDcacheType,
