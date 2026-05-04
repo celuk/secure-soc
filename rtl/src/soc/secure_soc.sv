@@ -857,6 +857,29 @@ module secure_soc (
    logic [31:0] uart_dram_write_addr_in;
 
    `ifdef SECURE_LAYER2
+   // Boot-time nonce generation
+   logic [31:0] free_counter;
+   
+   always_ff @(posedge clkwiz_o or negedge pll_locked) begin
+       if (~pll_locked)
+           free_counter <= '0;
+       else
+           free_counter <= free_counter + 1;
+   end
+
+   logic [31:0] boot_nonce;
+   logic nonce_captured;
+   
+   always_ff @(posedge clkwiz_o or negedge pll_locked) begin
+       if (~pll_locked) begin
+           nonce_captured <= 1'b0;
+           boot_nonce <= '0;
+       end else if (!nonce_captured) begin
+           boot_nonce <= free_counter;
+           nonce_captured <= 1'b1;
+       end
+   end
+
    wire rst_n_dram = (rst_ni & system_reset_o & pll_locked) || uart_dram_mode;
 
    // 1. UART/BOOTLOADER WRITE PATH ENCRYPTION
@@ -884,7 +907,7 @@ module secure_soc (
        .rst_ni  (rst_n_dram),
        .addr    (uart_dram_write_addr + 'h80000000),
        .data_in (uart_dram_write_data),
-       .mode    (1'b0),
+       .nonce   (boot_nonce),
        .data_out(uart_dram_write_data_enc)
    );
    `endif
@@ -967,7 +990,7 @@ module secure_soc (
        .rst_ni  (rst_n_dram),
        .addr    ({w_addr_mux[31:2], 2'b00}),
        .data_in (atomics_mst_wdata),
-       .mode    (1'b0),
+       .nonce   (boot_nonce),
        .data_out(ddr3_wdata_encrypted)
    );
    `endif
@@ -1036,7 +1059,7 @@ module secure_soc (
        .rst_ni  (rst_n_dram),
        .addr    ({r_addr_mux[31:2], 2'b00}),
        .data_in (encrypted_axi_rdata),
-       .mode    (1'b1),
+       .nonce   (boot_nonce),
        .data_out(ddr3_rdata_decrypted)
    );
    `endif
@@ -1229,7 +1252,7 @@ module secure_soc (
       .rst_ni  (rst_n),
       .addr    (mem8_obi_req.a.addr),
       .data_in (mem8_obi_req.a.wdata),
-      .mode    (1'b0),
+      .nonce   (boot_nonce),
       .data_out(sram_wdata_encrypted)
    );
 
@@ -1238,7 +1261,7 @@ module secure_soc (
       .rst_ni  (rst_n),
       .addr    (sram_addr_holder),
       .data_in (ram8_rdata_o),
-      .mode    (1'b1),
+      .nonce   (boot_nonce),
       .data_out(sram_rdata_decrypted)
    );
    `endif

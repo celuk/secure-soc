@@ -9,47 +9,30 @@ module prince_enc_dec #(
     input  wire        rst_ni,
     input  wire [31:0] addr,
     input  wire [31:0] data_in,
-    input  wire        mode,      // 0 = encrypt, 1 = decrypt
+    input  wire [31:0] nonce,
     output reg  [31:0] data_out
 );
 
-    wire [63:0] block_in  = {addr, data_in};
-    wire [63:0] block_out;
-
-    // Key decomposition
+    wire [63:0] prince_input = {nonce, addr};
     wire [63:0] k0 = KEY[127:64];
     wire [63:0] k1 = KEY[63:0];
-
-    // k0' derived key per PRINCE spec: rotate right by 1 and XOR bit 0 into MSB
     wire [63:0] k0_prime = {k0[0], k0[63:2], k0[1] ^ k0[63]};
 
-    // Alpha constant for decryption
-    localparam [63:0] ALPHA = 64'hC0AC29B7C97C50DD;
-
-    // Whitening keys depend on mode
-    wire [63:0] k_pre  = (mode == 1'b0) ? k0       : k0_prime;
-    wire [63:0] k_post = (mode == 1'b0) ? k0_prime  : k0;
-    wire [63:0] k_core = (mode == 1'b0) ? k1        : (k1 ^ ALPHA);
-
-    // Core input/output
-    wire [63:0] core_in  = block_in ^ k_pre;
+    wire [63:0] core_in  = prince_input ^ k0;
     wire [63:0] core_out;
+    wire [63:0] keystream = core_out ^ k0_prime;
 
-    assign block_out = core_out ^ k_post;
-
-    // PRINCE core - purely combinational
     prince_core_combinational i_prince_core (
         .data_in  (core_in),
-        .key      (k_core),
+        .key      (k1),
         .data_out (core_out)
     );
 
-    // Register output
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             data_out <= '0;
         else
-            data_out <= block_out[31:0];
+            data_out <= data_in ^ keystream[31:0];
     end
 
 endmodule
