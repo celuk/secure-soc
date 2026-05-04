@@ -857,15 +857,16 @@ module secure_soc (
    logic [31:0] uart_dram_write_addr_in;
 
    `ifdef SECURE_LAYER2
-   localparam DDR3_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
-
    wire rst_n_dram = (rst_ni & system_reset_o & pll_locked) || uart_dram_mode;
 
    // 1. UART/BOOTLOADER WRITE PATH ENCRYPTION
    logic [31:0] uart_dram_write_data_enc;
    logic        uart_dram_write_we_d;
    logic [31:0] uart_dram_write_addr_d;
-   ctr_encoder_decoder #(
+
+   `ifdef SECURE_LAYER2_CTR
+   localparam DDR3_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
+   ctr_enc_dec #(
        .KEY(DDR3_CTR_KEY)
    ) uart_loader_ctr_enc (
        .clk_i      (clkwiz_o),
@@ -874,6 +875,20 @@ module secure_soc (
        .data_in    (uart_dram_write_data),
        .data_out   (uart_dram_write_data_enc)
    );
+   `elsif SECURE_LAYER2_PRINCE
+   localparam [127:0] DDR3_PRINCE_KEY = 128'hDEADBEEF_CAFEF00D_BAADF00D_12345678;
+   prince_enc_dec #(
+       .KEY(DDR3_PRINCE_KEY)
+   ) uart_loader_prince_enc (
+       .clk_i   (clkwiz_o),
+       .rst_ni  (rst_n_dram),
+       .addr    (uart_dram_write_addr + 'h80000000),
+       .data_in (uart_dram_write_data),
+       .mode    (1'b0),
+       .data_out(uart_dram_write_data_enc)
+   );
+   `endif
+
    // Delay WE and ADDR by 1 cycle to match encrypted data output
    always_ff @(posedge clkwiz_o or negedge rst_n_dram) begin
       if (~rst_n_dram) begin
@@ -934,7 +949,8 @@ module secure_soc (
        .pop_i      (w_addr_fifo_pop)
    );
 
-   ctr_encoder_decoder #(
+   `ifdef SECURE_LAYER2_CTR
+   ctr_enc_dec #(
        .KEY(DDR3_CTR_KEY)
    ) ddr3_ctr_enc (
        .clk_i      (clkwiz_o),
@@ -943,6 +959,18 @@ module secure_soc (
        .data_in    (atomics_mst_wdata),
        .data_out   (ddr3_wdata_encrypted)
    );
+   `elsif SECURE_LAYER2_PRINCE
+   prince_enc_dec #(
+       .KEY(DDR3_PRINCE_KEY)
+   ) ddr3_prince_enc (
+       .clk_i   (clkwiz_o),
+       .rst_ni  (rst_n_dram),
+       .addr    ({w_addr_mux[31:2], 2'b00}),
+       .data_in (atomics_mst_wdata),
+       .mode    (1'b0),
+       .data_out(ddr3_wdata_encrypted)
+   );
+   `endif
 
    // 3. AXI READ PATH (Decryption)
    logic r_addr_fifo_push, r_addr_fifo_pop, r_addr_fifo_empty, r_addr_fifo_full;
@@ -990,7 +1018,8 @@ module secure_soc (
        .pop_i      (r_addr_fifo_pop)
    );
 
-   ctr_encoder_decoder #(
+   `ifdef SECURE_LAYER2_CTR
+   ctr_enc_dec #(
        .KEY(DDR3_CTR_KEY)
    ) ddr3_ctr_dec (
        .clk_i      (clkwiz_o),
@@ -999,6 +1028,18 @@ module secure_soc (
        .data_in    (encrypted_axi_rdata),
        .data_out   (ddr3_rdata_decrypted)
    );
+   `elsif SECURE_LAYER2_PRINCE
+   prince_enc_dec #(
+       .KEY(DDR3_PRINCE_KEY)
+   ) ddr3_prince_dec (
+       .clk_i   (clkwiz_o),
+       .rst_ni  (rst_n_dram),
+       .addr    ({r_addr_mux[31:2], 2'b00}),
+       .data_in (encrypted_axi_rdata),
+       .mode    (1'b1),
+       .data_out(ddr3_rdata_decrypted)
+   );
+   `endif
    `else
    assign ddr3_wdata_encrypted = atomics_mst_wdata;
    assign ddr3_rdata_decrypted = encrypted_axi_rdata;
@@ -1162,9 +1203,10 @@ module secure_soc (
       end
    end
 
+   `ifdef SECURE_LAYER2_CTR
    localparam SRAM_CTR_KEY = 256'hDEADBEEFCAFEF00DBAADF00D1234567887654321ABCDEF01FEDCBA9876543210;
 
-   ctr_encoder_decoder #(.KEY(SRAM_CTR_KEY)) sram_ctr_enc (
+   ctr_enc_dec #(.KEY(SRAM_CTR_KEY)) sram_ctr_enc (
       .clk_i(clkwiz_o),
       .rst_ni(rst_n),
       .row_number(mem8_obi_req.a.addr),
@@ -1172,13 +1214,34 @@ module secure_soc (
       .data_out(sram_wdata_encrypted)
    );
 
-   ctr_encoder_decoder #(.KEY(SRAM_CTR_KEY)) sram_ctr_dec (
+   ctr_enc_dec #(.KEY(SRAM_CTR_KEY)) sram_ctr_dec (
       .clk_i(clkwiz_o),
       .rst_ni(rst_n),
       .row_number(sram_addr_holder),
       .data_in(ram8_rdata_o),
       .data_out(sram_rdata_decrypted)
    );
+   `elsif SECURE_LAYER2_PRINCE
+   localparam [127:0] SRAM_PRINCE_KEY = 128'hDEADBEEF_CAFEF00D_BAADF00D_12345678;
+
+   prince_enc_dec #(.KEY(SRAM_PRINCE_KEY)) sram_prince_enc (
+      .clk_i   (clkwiz_o),
+      .rst_ni  (rst_n),
+      .addr    (mem8_obi_req.a.addr),
+      .data_in (mem8_obi_req.a.wdata),
+      .mode    (1'b0),
+      .data_out(sram_wdata_encrypted)
+   );
+
+   prince_enc_dec #(.KEY(SRAM_PRINCE_KEY)) sram_prince_dec (
+      .clk_i   (clkwiz_o),
+      .rst_ni  (rst_n),
+      .addr    (sram_addr_holder),
+      .data_in (ram8_rdata_o),
+      .mode    (1'b1),
+      .data_out(sram_rdata_decrypted)
+   );
+   `endif
    `else
    assign sram_wdata_encrypted = mem8_obi_req.a.wdata;
    assign sram_rdata_decrypted = ram8_rdata_o;
