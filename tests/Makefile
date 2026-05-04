@@ -113,6 +113,10 @@ all:
 
 	python3 ../tools/hex_to_ctr_hex.py -i $(CPATH).hex -o $(CPATH)_ctr.hex --start-row 0x80000000
 	python3 ../tools/hex_to_ddr3_init.py -i $(CPATH)_ctr.hex -o $(CPATH)_mem_init_ctr.txt
+
+	python3 ../tools/hex_to_prince_hex.py -i $(CPATH).hex -o $(CPATH)_prince.hex
+	python3 ../tools/hex_to_ddr3_init.py -i $(CPATH)_prince.hex -o $(CPATH)_mem_init_prince.txt
+
 #	python3 ../tools/meminit_to_ctr_meminit.py -i $(CPATH)_mem_init.txt -o $(CPATH)_mem_init_ctr.txt
 
 ## use this for qspi flash sim

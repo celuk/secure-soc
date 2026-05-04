@@ -440,8 +440,9 @@ module ddr3 (
         //in = $fopen("/home/shc/projects/clones/riscv-opensbi-port/build/platform/template/firmware/fw_dynamic_mem_init_ctr.txt","r");
         //in = $fopen("/home/shc/projects/clones/riscv-opensbi-port/build/platform/template/firmware/fw_dynamic_mem_init.txt","r");
 
+        in = $fopen("/home/shc/projects/secure-soc/tests/demo/demo_mem_init_prince.txt","r");
         //in = $fopen("/home/shc/projects/secure-soc/tests/demo/demo_mem_init_ctr.txt","r");
-        in = $fopen("/home/shc/projects/secure-soc/tests/demo/demo_mem_init.txt","r");
+        //in = $fopen("/home/shc/projects/secure-soc/tests/demo/demo_mem_init.txt","r");
 
         //in = $fopen("/home/shc/projects/riscv-linux-boot/opensbi/build/platform/template/firmware/fw_dynamic_mem_init.txt","r");
         

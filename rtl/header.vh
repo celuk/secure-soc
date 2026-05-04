@@ -81,8 +81,8 @@ PERIPHERALS
 // make compile bootloader
 // make compile secure_bootloader_qspi --> This assures SECURE_LAYER1
 // SECURE_LAYER2 enc-dec lives on the bus, this assures keeping program encrypted in memory (sram or dram)
-`define SECURE_LAYER2_CTR
-//`define SECURE_LAYER2_PRINCE
+//`define SECURE_LAYER2_CTR
+`define SECURE_LAYER2_PRINCE
 
 `ifdef SECURE_LAYER2_CTR
   `define SECURE_LAYER2
