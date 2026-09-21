@@ -87,9 +87,9 @@ The core and defines has to be set in two places, in [`header.vh`](rtl/header.vh
 
 There are many possibilities-configurations working for this soc to simulate and run: base soc, phase1 (boot-crypt) (secure boot), phase2 (mem-crypt) (on-the-fly memory encryption for confidential computing), phase1+phase2 (securesoc), boot from dram, boot from qspi flash, secure boot from dram, secure boot from qspi flash, boot from sram, second sram instead of dram (there is always an sram for embedded bootrom (that is generated from different bootloader c codes) and second means here main memory of the soc), programming from uart instead of boot from an external memory. Some are here, some are commented in the codes and some are in my other old tryings like these (since I don't wanna lose any more time for an academic stuff that won't be a product and don't wanna pollute the repos with ai slop and burn tokens to gather them and polish, I am sharing them as is and anyone can benefit from different parts from them by a small effort):
 
-https://github.com/celuk/cva-soc
+For old base one, you may check: https://github.com/celuk/cva-soc
 
-https://github.com/celuk/air-soc-boot-ibex
+For different secure boot AES modes, you may check: https://github.com/celuk/air-soc-boot-ibex
 
 Some basic simulation examples:
 
@@ -129,7 +129,11 @@ make sim bootloader_dram
 
 After simulation you may check the trace logs in [`verification`](verification) folder. You can wait for a UART output that will print in the console and you can interrupt via CTRL+C after some time, you can set the time limit for sim in [`main.py`](verification/sim/main.py).
 
-Instead of simulation, for FPGAs (ZC706 or BASYS3), you need to compile a correct bootrom like we are doing for the simulations and before an implementation remove the sim defines from [`header.vh`](rtl/header.vh).
+**Note:** Some paths here are left as absolute local paths, so fix them for your machine before running them.
+
+## Running on a FPGA
+
+Instead of simulation, for FPGAs (ZC706 or BASYS3), you need to compile a correct bootrom like we are doing for the simulations and before a vivado implementation remove the sim defines from [`header.vh`](rtl/header.vh).
 
 ## Linux Boot
 
@@ -147,7 +151,7 @@ https://github.com/celuk/riscv-linux-boot (OLD)
 
 ## ASIC
 
-For ASIC done in TSMC 65nm with Synopsys Fusion Compiler you may need to check this:
+For ASIC done in TSMC 65nm with Synopsys Fusion Compiler, you may need to check this:
 
 https://github.com/celuk/synopsys-flow
 
