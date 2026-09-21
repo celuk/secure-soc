@@ -4,6 +4,9 @@
 +incdir+/home/shc/projects/secure-soc/cva6/corev_apu/register_interface/include
 +incdir+/home/shc/projects/secure-soc/axi/include
 +incdir+/home/shc/projects/secure-soc/obi/include
+/home/shc/projects/secure-soc/vivado/cva_soc_zc706/cva_soc_zc706.gen/sources_1/ip/clk_wiz_0/clk_wiz_0.dcp
+/home/shc/projects/secure-soc/rtl/src/peripherals/dram/ddr3_core.v
+/home/shc/projects/secure-soc/rtl/src/peripherals/dram/ddr3_dfi_seq.v
 /home/shc/projects/secure-soc/cva6/vendor/pulp-platform/fpga-support/rtl/AsyncDpRam.sv
 /home/shc/projects/secure-soc/cva6/vendor/pulp-platform/fpga-support/rtl/AsyncThreePortRam.sv
 /home/shc/projects/secure-soc/cva6/vendor/pulp-platform/fpga-support/rtl/SyncDpRam.sv
@@ -13,7 +16,6 @@
 /home/shc/projects/secure-soc/cva6/vendor/pulp-platform/fpga-support/rtl/SyncSpRamBeNx64.sv
 /home/shc/projects/secure-soc/cva6/vendor/pulp-platform/fpga-support/rtl/SyncThreePortRam.sv
 /home/shc/projects/secure-soc/cva6/core/include/config_pkg.sv
-/home/shc/projects/secure-soc/cva6/core/pmp/include/riscv.sv
 /home/shc/projects/secure-soc/rtl/src/config/custom_config.sv
 /home/shc/projects/secure-soc/cva6/core/include/riscv_pkg.sv
 /home/shc/projects/secure-soc/cva6/core/include/ariane_pkg.sv
@@ -41,6 +43,11 @@
 /home/shc/projects/secure-soc/cva6/vendor/pulp-platform/axi/src/axi_id_prepend.sv
 /home/shc/projects/secure-soc/cva6/vendor/pulp-platform/axi/src/axi_multicut.sv
 /home/shc/projects/secure-soc/cva6/vendor/pulp-platform/axi/src/axi_mux.sv
+/home/shc/projects/secure-soc/cva6/corev_apu/src/axi_riscv_atomics/src/axi_res_tbl.sv
+/home/shc/projects/secure-soc/cva6/corev_apu/src/axi_riscv_atomics/src/axi_riscv_amos.sv
+/home/shc/projects/secure-soc/cva6/corev_apu/src/axi_riscv_atomics/src/axi_riscv_amos_alu.sv
+/home/shc/projects/secure-soc/cva6/corev_apu/src/axi_riscv_atomics/src/axi_riscv_atomics.sv
+/home/shc/projects/secure-soc/cva6/corev_apu/src/axi_riscv_atomics/src/axi_riscv_lrsc.sv
 /home/shc/projects/secure-soc/cva6/core/axi_shim.sv
 /home/shc/projects/secure-soc/axi/src/axi_to_detailed_mem.sv
 /home/shc/projects/secure-soc/safety_island/future/axi_obi/src/axi_to_detailed_mem_user.sv
@@ -84,9 +91,13 @@
 /home/shc/projects/secure-soc/cva6/core/cvxif_compressed_if_driver.sv
 /home/shc/projects/secure-soc/cva6/core/cvxif_fu.sv
 /home/shc/projects/secure-soc/cva6/core/cvxif_issue_register_commit_if_driver.sv
+/home/shc/projects/secure-soc/rtl/src/peripherals/dram/ddr3_controller.sv
+/home/shc/projects/secure-soc/rtl/src/peripherals/dram/ddr3_dfi_phy.sv
 /home/shc/projects/secure-soc/cva6/core/decoder.sv
 /home/shc/projects/secure-soc/cva6/vendor/pulp-platform/common_cells/src/delta_counter.sv
 /home/shc/projects/secure-soc/cva6/core/cvfpu/src/fpu_div_sqrt_mvp/hdl/div_sqrt_top_mvp.sv
+/home/shc/projects/secure-soc/rtl/src/peripherals/dram/dram_controller_axi.sv
+/home/shc/projects/secure-soc/rtl/src/peripherals/dram/dram_controller_wb.sv
 /home/shc/projects/secure-soc/cva6/core/ex_stage.sv
 /home/shc/projects/secure-soc/cva6/vendor/pulp-platform/common_cells/src/exp_backoff.sv
 /home/shc/projects/secure-soc/cva6/vendor/pulp-platform/common_cells/src/fall_through_register.sv
@@ -182,9 +193,7 @@
 /home/shc/projects/secure-soc/cva6/core/cvfpu/src/fpu_div_sqrt_mvp/hdl/preprocess_mvp.sv
 /home/shc/projects/secure-soc/cva6/corev_apu/rv_plic/rtl/prim_subreg.sv
 /home/shc/projects/secure-soc/cva6/corev_apu/register_interface/vendor/lowrisc_opentitan/src/prim_subreg_arb.sv
-/home/shc/projects/secure-soc/rtl/src/peripherals/qspi/qspi_controller.sv
-/home/shc/projects/secure-soc/rtl/src/peripherals/qspi/qspi_controller_axi.sv
-/home/shc/projects/secure-soc/rtl/src/memory/ram.sv
+/home/shc/projects/secure-soc/rtl/src/memory/prince_enc_dec.sv
 /home/shc/projects/secure-soc/rtl/src/memory/ram_dwr.sv
 /home/shc/projects/secure-soc/cva6/core/frontend/ras.sv
 /home/shc/projects/secure-soc/register_interface/src/reg_demux.sv
