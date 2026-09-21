@@ -37,7 +37,7 @@
 `define DCACHE_WAY_LEN `DCACHE_SZ / (`DCACHE_LINE_W / 8) / 2
 
 `define RAM_FPATH "" //"../../../tests/coremark/coremark_baremetal.hex" //"" //"../../../tests/demo/demo.hex" //"../../../tests/coremark/coremark_baremetal.hex" //"../../../tests/qspi_demo/qspi_demo.hex"
-`define RAM_SIZE 'h2F00 //'h3200 //131072 //32'h0002_0000 //131072 //256 * 1024
+`define RAM_SIZE 'h8000 //'h2F00 //'h3200 //131072 //32'h0002_0000 //131072 //256 * 1024
 
 //`define MEM_BASE_ADDR   32'h0000_0000
 //`define MEM_RANGE       32'h0F00_0000
@@ -131,3 +131,8 @@ PERIPHERALS
 
 `define CODE_RAM_BASE_ADDR 32'h00002000
 `define CODE_RAM_RANGE 32'h0F00_0000
+
+`ifdef QSPI_SIM
+    `define CV32E40P_TRACE_EXECUTION
+    `define RVFI
+`endif

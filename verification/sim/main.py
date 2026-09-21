@@ -6,7 +6,13 @@ from cocotb.runner import get_runner
 
 SCRIPT_DIR = Path(os.path.realpath(__file__)).parent.absolute()
 
+VIVADO_PATH = "/tools/Xilinx/Vivado/2022.2"
+#VIVADO_PATH = "/home/kasirga/work/xilinx/tools/Xilinx/Vivado/2022.2"
+
 DRAM_SIM = 1
+
+# "cva6" # "cv32e40p" # "ibex"
+CORE = "cva6"
 
 def run_test(simulator: str, test_file: Path, top_module: str, waves: bool, cfile: str):
     hdl_dir = Path(SCRIPT_DIR / "../../rtl")
@@ -19,21 +25,32 @@ def run_test(simulator: str, test_file: Path, top_module: str, waves: bool, cfil
     system_verilog_headers = hdl_dir.rglob("*.svh")
 
     # List of submodule directories to search
-    submodule_dirs = [
-        Path(SCRIPT_DIR / "../../cva6/core"),
-        Path(SCRIPT_DIR / "../../cva6/vendor"),
-        Path(SCRIPT_DIR / "../../cva6/common"),
-        Path(SCRIPT_DIR / "../../cva6/corev_apu"),
-        Path(SCRIPT_DIR / "../../cva6/verif/tb/core/tb_components"),
-        Path(SCRIPT_DIR / "../../clint"),
-        Path(SCRIPT_DIR / "../../register_interface"),
-        Path(SCRIPT_DIR / "../../rv_plic/rtl"),
-        #Path(SCRIPT_DIR / "../../axi"),
-        #Path(SCRIPT_DIR / "../../axi_riscv_atomics/src"),
-        Path(SCRIPT_DIR / "../../obi"),
-        Path(SCRIPT_DIR / "../../safety_island/future/axi_obi")
-    ]
-    
+    if CORE == "cva6":
+        submodule_dirs = [
+            Path(SCRIPT_DIR / "../../cva6/core"),
+            Path(SCRIPT_DIR / "../../cva6/vendor"),
+            Path(SCRIPT_DIR / "../../cva6/common"),
+            Path(SCRIPT_DIR / "../../cva6/corev_apu"),
+            Path(SCRIPT_DIR / "../../cva6/verif/tb/core/tb_components"),
+            Path(SCRIPT_DIR / "../../clint"),
+            Path(SCRIPT_DIR / "../../register_interface"),
+            Path(SCRIPT_DIR / "../../rv_plic/rtl"),
+            #Path(SCRIPT_DIR / "../../axi"),
+            #Path(SCRIPT_DIR / "../../axi_riscv_atomics/src"),
+            Path(SCRIPT_DIR / "../../obi"),
+            Path(SCRIPT_DIR / "../../safety_island/future/axi_obi")
+        ]
+    elif CORE == "cv32e40p":
+        submodule_dirs = [
+            Path(SCRIPT_DIR / "../../cv32e40p/rtl")
+        ]
+    elif CORE == "ibex":
+        submodule_dirs = [
+            Path(SCRIPT_DIR / "../../ibex/rtl"),
+            #Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/ip/prim/rtl"),
+            #Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/dv/sv/dv_utils")
+        ]
+
     # Gather all relevant files from all submodule directories
     submodule_verilog_files = []
     submodule_system_verilog_files = []
@@ -45,12 +62,17 @@ def run_test(simulator: str, test_file: Path, top_module: str, waves: bool, cfil
         submodule_verilog_headers.extend(submodule_dir.rglob("*.vh"))
         submodule_system_verilog_headers.extend(submodule_dir.rglob("*.svh"))
     
+    tracer_srcs = []
+    if CORE == "cv32e40p":
+        tracer_srcs = list([Path(SCRIPT_DIR / "../../cv32e40p/bhv/include/cv32e40p_tracer_pkg.sv")]) + list([Path(SCRIPT_DIR / "../../rtl/sim/cv32e40p_tracer.sv")])
+
     # Combine all verilog sources
     verilog_sources = (
         list(verilog_files)
         + list(system_verilog_files)
         + submodule_verilog_files
         + submodule_system_verilog_files
+        + tracer_srcs
     )
     
     # Exclude testbenches and specific undesired modules
@@ -99,6 +121,25 @@ def run_test(simulator: str, test_file: Path, top_module: str, waves: bool, cfil
         and not str(path).rsplit('/', 1)[-1].endswith("axi_id_serialize.sv")
         and not (str(path).rsplit('/', 1)[-1].endswith("_config_pkg.sv") and not str(path).rsplit('/', 1)[-1].endswith("build_config_pkg.sv")) ## fix config conflict by not including all
     ]
+    
+    if CORE == "cv32e40p" or CORE == "ibex":
+        verilog_sources = [
+            path for path in verilog_sources
+            if not str(path).rsplit('/', 1)[-1].endswith("custom_config.sv")
+            and not str(path).rsplit('/', 1)[-1].endswith("ram_axi.sv")
+            and not str(path).rsplit('/', 1)[-1].endswith("axi_synth_mem.sv")
+            and not str(path).rsplit('/', 1)[-1].endswith("obi_sram_shim_modified.sv")
+            and not str(path).rsplit('/', 1)[-1].endswith("axi_to_obi_adapter.sv")
+            and not str(path).rsplit('/', 1)[-1].endswith("axi_to_dual_obi_adapter.sv")
+            and not str(path).rsplit('/', 1)[-1].endswith("_axi.sv")
+        ]
+
+    if CORE != "cv32e40p":
+        verilog_sources = [
+            path for path in verilog_sources
+            if not str(path).rsplit('/', 1)[-1].endswith("cv32e40p_tracer.sv")
+        ]
+
     #and "util/tc_sram_wrapper_cache_techno.sv" not in str(path)
     #and "cache_subsystem/wt_" not in str(path)
     #and not str(path).rsplit('/', 1)[-1].endswith("custom_config.sv")
@@ -107,6 +148,32 @@ def run_test(simulator: str, test_file: Path, top_module: str, waves: bool, cfil
 
     ## sort the sources to make sure that the def and pkg.sv files are at the beginning
     ## otherwise the simulator might not find the packages
+
+    if CORE == "ibex":
+        verilog_sources.extend(
+            list([Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/dv/sv/dv_utils/dv_fcov_macros.svh")])
+            + list([Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/ip/prim/rtl/prim_assert_standard_macros.svh")])
+            + list([Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/ip/prim/rtl/prim_assert_sec_cm.svh")])
+            + list([Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/ip/prim/rtl/prim_flop_macros.sv")])
+            + list([Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/ip/prim/rtl/prim_assert.sv")])
+            + list([Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/ip/prim/rtl/prim_ram_1p_pkg.sv")])
+            + list([Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/ip/prim/rtl/prim_secded_pkg.sv")])
+            #+ list([Path(SCRIPT_DIR / "../../ibex/syn/rtl/prim_clock_gating.v")])
+            + list([Path(SCRIPT_DIR / "../../ibex/dv/uvm/core_ibex/common/prim/prim_pkg.sv")])
+            + list([Path(SCRIPT_DIR / "../../ibex/dv/uvm/core_ibex/common/prim/prim_clock_gating.sv")])
+            + list([Path(SCRIPT_DIR / "../../ibex/dv/uvm/core_ibex/common/prim/prim_buf.sv")])
+            + list([Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_generic_buf.sv")])
+            + list([Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/ip/prim_generic/rtl/prim_generic_clock_gating.sv")])
+        )
+
+    cv32_ibex_def_sv_paths = []
+    cv32_ibex_pkg_sv_paths = []
+    cv32_ibex_other_paths = []
+    if CORE == "ibex":
+        cv32_ibex_def_sv_paths = [path for path in verilog_sources if str(path).rsplit('/', 1)[-1].startswith("def") or str(path).endswith("prim_ram_1p_pkg.sv")]
+        cv32_ibex_pkg_sv_paths = [path for path in verilog_sources if str(path).endswith("pkg.sv") or str(path).endswith("prim_assert.sv") or str(path).endswith("dv_fcov_macros.svh")]
+        cv32_ibex_other_paths = [path for path in verilog_sources if not str(path).rsplit('/', 1)[-1].startswith("def") and not str(path).endswith("pkg.sv")]
+
     def_sv_paths = [path for path in verilog_sources if str(path).rsplit('/', 1)[-1].startswith("def")]
     obi_pkg_path = [path for path in verilog_sources if str(path).rsplit('/', 1)[-1].startswith("cf_math_pkg.sv") or str(path).rsplit('/', 1)[-1].startswith("obi_pkg.sv")]
     config_pkg_path = [path for path in verilog_sources if str(path).rsplit('/', 1)[-1].startswith("config_pkg.sv")
@@ -121,42 +188,60 @@ def run_test(simulator: str, test_file: Path, top_module: str, waves: bool, cfil
     other_paths = [path for path in verilog_sources if not str(path).rsplit('/', 1)[-1].startswith("def") and not str(path).endswith("pkg.sv")]
     verilog_sources = (
         list(def_sv_paths)
+        + list(cv32_ibex_def_sv_paths)
+        + list(cv32_ibex_pkg_sv_paths)
+        + list(cv32_ibex_other_paths)
         + list([Path(SCRIPT_DIR / "../../common_cells/include/common_cells/registers.svh")])
         + list(obi_pkg_path)
         + list(config_pkg_path)
-        + list(cva6_config_pkg_path)
-        + list(riscv_pkg_path)
-        + list(params_pkg_paths)
-        + list(pre_pkg_sv_paths)
-        + list([Path(SCRIPT_DIR / "../../cva6/corev_apu/tb/ariane_axi_pkg.sv")])
-        + list([Path(SCRIPT_DIR / "../../axi/src/axi_demux_simple.sv")])
-        + list([Path(SCRIPT_DIR / "../../cva6/vendor/pulp-platform/fpga-support/rtl/SyncSpRam.sv")])
-        + list([Path(SCRIPT_DIR / "../../cva6/vendor/pulp-platform/fpga-support/rtl/SyncSpRamBeNx64.sv")])
-        + list([Path(SCRIPT_DIR / "../../cva6/vendor/pulp-platform/fpga-support/rtl/AsyncDpRam.sv")])
-        + list([Path(SCRIPT_DIR / "../../cva6/vendor/pulp-platform/fpga-support/rtl/SyncDpRam.sv")])
-        + list([Path(SCRIPT_DIR / "../../cva6/vendor/pulp-platform/fpga-support/rtl/AsyncThreePortRam.sv")])
-        + list([Path(SCRIPT_DIR / "../../cva6/vendor/pulp-platform/fpga-support/rtl/SyncSpRamBeNx32.sv")])
-        + list(pkg_sv_paths)
+        #+ list(cva6_config_pkg_path)
+    )
+
+    if CORE == "cva6":
+        verilog_sources.extend(
+            list(cva6_config_pkg_path)
+            + list(riscv_pkg_path)
+            + list(params_pkg_paths)
+            + list(pre_pkg_sv_paths)
+            + list([Path(SCRIPT_DIR / "../../cva6/corev_apu/tb/ariane_axi_pkg.sv")])
+            + list([Path(SCRIPT_DIR / "../../axi/src/axi_demux_simple.sv")])
+            + list([Path(SCRIPT_DIR / "../../cva6/vendor/pulp-platform/fpga-support/rtl/SyncSpRam.sv")])
+            + list([Path(SCRIPT_DIR / "../../cva6/vendor/pulp-platform/fpga-support/rtl/SyncSpRamBeNx64.sv")])
+            + list([Path(SCRIPT_DIR / "../../cva6/vendor/pulp-platform/fpga-support/rtl/AsyncDpRam.sv")])
+            + list([Path(SCRIPT_DIR / "../../cva6/vendor/pulp-platform/fpga-support/rtl/SyncDpRam.sv")])
+            + list([Path(SCRIPT_DIR / "../../cva6/vendor/pulp-platform/fpga-support/rtl/AsyncThreePortRam.sv")])
+            + list([Path(SCRIPT_DIR / "../../cva6/vendor/pulp-platform/fpga-support/rtl/SyncSpRamBeNx32.sv")])
+        )
+
+    verilog_sources.extend(
+        list(pkg_sv_paths)
         + list(other_paths)
-        + list([Path(SCRIPT_DIR / "../../axi/src/axi_to_detailed_mem.sv")])
-        #+ list([Path(SCRIPT_DIR / "../../axi/src/axi_cut.sv")])
-        + list(["../../vivado/cva_soc_zc706/cva_soc_zc706.gen/sources_1/ip/clk_wiz_0/clk_wiz_0_sim_netlist.v"])
-        + list(["/tools/Xilinx/Vivado/2022.2/data/verilog/src/glbl.v"])
-        + list(["/tools/Xilinx/Vivado/2022.2/data/verilog/src/unisims/OBUFDS.v"])
-        + list(["/tools/Xilinx/Vivado/2022.2/data/verilog/src/unisims/IOBUFDS.v"])
-        + list(["/tools/Xilinx/Vivado/2022.2/data/verilog/src/unisims/OSERDESE2.v"])
-        + list(["/tools/Xilinx/Vivado/2022.2/data/verilog/src/unisims/ISERDESE2.v"])
-        + list(["/tools/Xilinx/Vivado/2022.2/data/verilog/src/unisims/IOBUF.v"])
-        + list(["/tools/Xilinx/Vivado/2022.2/data/verilog/src/unisims/IDELAYE2.v"])
-        + list(["/tools/Xilinx/Vivado/2022.2/data/verilog/src/unisims/IDELAYCTRL.v"])
-        + list(["/tools/Xilinx/Vivado/2022.2/data/verilog/src/unisims/BUFG.v"])
-        + list(["/tools/Xilinx/Vivado/2022.2/data/verilog/src/unisims/IBUFDS.v"])
-        + list(["/tools/Xilinx/Vivado/2022.2/data/verilog/src/unisims/MMCME2_ADV.v"])
+    )
+
+    if CORE == "cva6":
+        verilog_sources.extend(
+            list([Path(SCRIPT_DIR / "../../axi/src/axi_to_detailed_mem.sv")])
+            #+ list([Path(SCRIPT_DIR / "../../axi/src/axi_cut.sv")])
+        )
+
+    verilog_sources.extend(
+        list(["../../vivado/cva_soc_zc706/cva_soc_zc706.gen/sources_1/ip/clk_wiz_0/clk_wiz_0_sim_netlist.v"])
+        + list([f"{VIVADO_PATH}/data/verilog/src/glbl.v"])
+        + list([f"{VIVADO_PATH}/data/verilog/src/unisims/OBUFDS.v"])
+        + list([f"{VIVADO_PATH}/data/verilog/src/unisims/IOBUFDS.v"])
+        + list([f"{VIVADO_PATH}/data/verilog/src/unisims/OSERDESE2.v"])
+        + list([f"{VIVADO_PATH}/data/verilog/src/unisims/ISERDESE2.v"])
+        + list([f"{VIVADO_PATH}/data/verilog/src/unisims/IOBUF.v"])
+        + list([f"{VIVADO_PATH}/data/verilog/src/unisims/IDELAYE2.v"])
+        + list([f"{VIVADO_PATH}/data/verilog/src/unisims/IDELAYCTRL.v"])
+        + list([f"{VIVADO_PATH}/data/verilog/src/unisims/BUFG.v"])
+        + list([f"{VIVADO_PATH}/data/verilog/src/unisims/IBUFDS.v"])
+        + list([f"{VIVADO_PATH}/data/verilog/src/unisims/MMCME2_ADV.v"])
     )
 
     verilog_sources = list(dict.fromkeys(verilog_sources))
 
-    vivado_ip_vhdls = ["/tools/Xilinx/Vivado/2022.2/data/vhdl/src/unisims/unisim_VCOMP.vhd", "/tools/Xilinx/Vivado/2022.2/data/vhdl/src/unisims/unisim_VPKG.vhd"]
+    vivado_ip_vhdls = [f"{VIVADO_PATH}/data/vhdl/src/unisims/unisim_VCOMP.vhd", f"{VIVADO_PATH}/data/vhdl/src/unisims/unisim_VPKG.vhd"]
 
     include_dirs = [
         header.parent
@@ -177,6 +262,12 @@ def run_test(simulator: str, test_file: Path, top_module: str, waves: bool, cfil
         include_dirs.extend(subdirectories)
 
     include_dirs.extend([sim_dir])
+    if CORE == "ibex":
+        include_dirs.extend([Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/dv/sv/dv_utils")])
+        include_dirs.extend([Path(SCRIPT_DIR / "../../ibex/vendor/lowrisc_ip/ip/prim/rtl")])
+        include_dirs.extend([Path(SCRIPT_DIR / "../../ibex/dv/uvm/core_ibex/common/prim")])
+    if CORE == "cv32e40p":
+        include_dirs.extend([Path(SCRIPT_DIR / "../../cv32e40p/bhv")])
     #include_dirs.extend(mem_files)
 
     print("\nINCLUDE_DIRS:")
@@ -241,15 +332,17 @@ def run_test(simulator: str, test_file: Path, top_module: str, waves: bool, cfil
         with open("pre_input.tcl", "w") as f:
             f.writelines(["set probe_packed_limit 0;\n", "set probe_unpacked_limit 0;\n"])
         if DRAM_SIM: #if "dram" in cfile:
-            runner_build_args.extend(["-f", "/tools/Xilinx/Vivado/2022.2/data/secureip/secureip_cell.list.f"])
+            runner_build_args.extend(["-f", f"{VIVADO_PATH}/data/secureip/secureip_cell.list.f"])
         runner_build_args = [
-                             #"-f", "/tools/Xilinx/Vivado/2022.2/data/secureip/secureip_cell.list.f",
+                             #"-f", f"{VIVADO_PATH}/data/secureip/secureip_cell.list.f",
                              "-newperf", "-plusperf",
                              "-top", "glbl", "-namemap_mixgen", "-verbose", "-access", "+rwc", "-timescale", "1ns/1ps", "-ALLOWREDEFINITION", "-relax", "-sv",
                              "-v93",
                              '+incdir+"../../../vivado/cva_soc_zc706/cva_soc_zc706.gen/sources_1/ip/clk_wiz_0"']
+        if CORE == "cv32e40p":
+            runner_build_args.extend(["+define+CV32E40P_TRACE_EXECUTION"])
         if DRAM_SIM: #if "dram" in cfile:
-            runner_build_args.extend(["-f", "/tools/Xilinx/Vivado/2022.2/data/secureip/secureip_cell.list.f"])
+            runner_build_args.extend(["-f", f"{VIVADO_PATH}/data/secureip/secureip_cell.list.f"])
         runner_pre_cmd = []
         runner_test_args = ["-newperf", "-plusperf", "-top", "glbl", "-verbose", "-access", "+rwc", "-timescale", "1ns/1ps", "-pre_input", "../pre_input.tcl"] #["set probe_packed_limit 131072; set probe_unpacked_limit 131072;"] #["probe -create -packed 131072 *;"]
 
@@ -272,9 +365,9 @@ def run_test(simulator: str, test_file: Path, top_module: str, waves: bool, cfil
         test_module=str(test_file),
         waves=waves,
         gui=False,
-        plusargs=["+nowarnTSCALE"],
+        plusargs=["+nowarnTSCALE", "+ibex_tracer_enable"],
         extra_env={
-            "XILINX_VIVADO": "/tools/Xilinx/Vivado/2022.2",
+            "XILINX_VIVADO": VIVADO_PATH,
         #    "COCOTB_LOG_LEVEL": "TRACE",
         #    "COCOTB_SCHEDULER_DEBUG": "1",
             "SHM_RESET_DEFAULTS": "1",
