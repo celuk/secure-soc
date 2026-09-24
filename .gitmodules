@@ -28,3 +28,9 @@
 [submodule "cv32e40p"]
 	path = cv32e40p
 	url = https://github.com/openhwgroup/cv32e40p
+[submodule "synopsys-flow"]
+	path = synopsys-flow
+	url = https://github.com/celuk/synopsys-flow
+[submodule "riscv-linux-from-scratch"]
+	path = riscv-linux-from-scratch
+	url = https://github.com/celuk/riscv-linux-from-scratch
