@@ -158,3 +158,15 @@ https://github.com/celuk/synopsys-flow
 ![asic_flow.png](figures/asic_flow.png)
 
 ![gds.png](figures/gds.png)
+
+## Code References
+
+In addition to submodules, some codes were used from these repos directly or after some modification:
+
+https://github.com/ultraembedded/core_ddr3_controller
+
+https://github.com/vproc/vicuna
+
+https://github.com/TUTEL-TUBITAK/TEKNOFEST_2023_Cip_Tasarim_Yarismasi
+
+https://github.com/KASIRGA-KIZIL/tekno-kizil
